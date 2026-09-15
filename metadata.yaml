@@ -4,7 +4,7 @@ desc: |
   一个专为蔚蓝档案玩家打造的 BAOnly（蔚蓝档案 ONLY 同人展）活动查询与截图的AstrBot插件，
   支持 Playwright 无头浏览器截图 BAOnly 活动列表页，并通过 BAOnly 公开 API 为 AI 提供活动信息查询能力。
 short_desc: 蔚蓝档案同人ONLY活动截图与查询
-version: v1.0.0
+version: v1.0.1
 author: 香草味的纳西妲喵（VanillaNahida）
 
 repo: https://github.com/VanillaNahida/astrbot_plugin_baonly
