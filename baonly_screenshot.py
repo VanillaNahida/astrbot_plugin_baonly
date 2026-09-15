@@ -4,7 +4,7 @@ from importlib.metadata import version
 
 from astrbot.api import logger
 
-BAONLY_URL = "https://www.baonly.cn/"
+BAONLY_URL = "https://beta.baonly.cn/"
 
 # 反调试注入脚本
 ANTI_DEBUG_SCRIPT = """
@@ -87,63 +87,163 @@ SIZE_OPTIONS = {
 }
 
 
-async def wait_for_page_load(page):
-    """等待页面加载，触发懒加载图片后等待图片完成"""
-    logger.info("[BAOnly] 等待页面加载...")
+async def close_tour(page):
+    """关闭新手教程引导弹窗（点击"不用啦"按钮，正确退出，避免报错）"""
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    nudge = page.locator(".tour__nudge")
     try:
-        await page.wait_for_load_state("networkidle", timeout=15000)
+        await nudge.wait_for(timeout=2000)
+    except PlaywrightTimeoutError:
+        return
+    if not await nudge.is_visible():
+        return
+    skip_btn = nudge.locator("button", has_text="不用啦")
+    try:
+        await skip_btn.first.wait_for(timeout=2000)
+        if await skip_btn.first.is_visible():
+            await skip_btn.first.click()
+            await page.wait_for_timeout(300)
+    except PlaywrightTimeoutError:
+        pass
+
+
+async def close_announcement(page):
+    """关闭公告弹窗（点击关闭按钮，避免直接删元素导致报错）"""
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    # 新版：scrim 遮罩下的公告弹窗
+    scrim_btn = page.locator('body > div.scrim.fixed.inset-0 button[aria-label="关闭"]')
+    try:
+        await scrim_btn.first.wait_for(timeout=2000)
+        if await scrim_btn.first.is_visible():
+            await scrim_btn.first.click()
+            await page.wait_for_timeout(300)
+            return
+    except PlaywrightTimeoutError:
+        pass
+
+    # 旧版：公告中心弹窗
+    close_btn = page.locator(".announcement-center-dialog .icon-button")
+    try:
+        await close_btn.first.wait_for(timeout=2000)
+        if await close_btn.first.is_visible():
+            await close_btn.first.click()
+            await page.wait_for_timeout(300)
+    except PlaywrightTimeoutError:
+        pass
+
+
+async def close_overlays(page):
+    """截图前关闭公告弹窗与新手教程引导"""
+    await close_announcement(page)
+    await close_tour(page)
+
+
+async def reset_mouse(page):
+    """将鼠标移到页脚空白区域，清除组件:hover 高亮状态"""
+    try:
+        size = page.viewport_size
+        height = size["height"] if size else 1080
+        await page.mouse.move(2, height - 2)
+        await page.wait_for_timeout(300)
     except Exception:
         pass
 
-    # 滚动页面一次，触发所有懒加载图片
-    logger.info("[BAOnly] 滚动触发懒加载图片...")
-    await page.evaluate("""
-        async () => {
-            const step = window.innerHeight * 0.8;
-            const maxScroll = document.body.scrollHeight;
-            for (let y = 0; y < maxScroll; y += step) {
-                window.scrollTo(0, y);
-                await new Promise(r => setTimeout(r, 120));
-            }
-            window.scrollTo(0, maxScroll);
-            await new Promise(r => setTimeout(r, 400));
-            window.scrollTo(0, 0);
-            await new Promise(r => setTimeout(r, 200));
-        }
-    """)
 
-    # 等待所有图片加载完成
+async def wait_for_page_load(page, max_retries=8):
+    """等待页面完全加载，包括所有懒加载图片"""
     from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-    try:
-        await page.wait_for_function("""
-            () => {
-                const imgs = document.querySelectorAll('img');
-                if (imgs.length === 0) return true;
-                return [...imgs].every(img => img.complete);
-            }
-        """, timeout=15000)
-    except PlaywrightTimeoutError:
-        pass
-    await page.wait_for_timeout(500)
 
-    # 等待渲染帧完成
+    logger.info("[BAOnly] 等待页面加载...")
+    try:
+        await page.wait_for_load_state("networkidle", timeout=10000)
+    except Exception as e:
+        logger.warning(f"[BAOnly] 等待网络空闲超时: {e}")
+
+    for attempt in range(max_retries):
+        # 逐步滚动整个页面触发所有懒加载图片
+        logger.info(f"[BAOnly] 第 {attempt + 1}/{max_retries} 轮：滚动页面触发懒加载...")
+        await page.evaluate("""
+            async () => {
+                const step = window.innerHeight * 0.75;
+                const maxScroll = document.body.scrollHeight;
+                for (let y = 0; y < maxScroll; y += step) {
+                    window.scrollTo(0, y);
+                    await new Promise(r => setTimeout(r, 150));
+                }
+                window.scrollTo(0, maxScroll);
+                await new Promise(r => setTimeout(r, 1500));
+            }
+        """)
+
+        # 强制所有图片 eager + sync 解码
+        await page.evaluate("""
+            () => {
+                document.querySelectorAll('img').forEach(img => {
+                    img.loading = 'eager';
+                    img.decoding = 'sync';
+                });
+            }
+        """)
+        await page.wait_for_timeout(2000)
+
+        # 使用 decode() 确认图片完全解码
+        result = await page.evaluate("""
+            async () => {
+                const imgs = document.querySelectorAll('img');
+                if (imgs.length === 0) return { done: true, total: 0, loaded: 0, failed: 0, pending: 0 };
+
+                let loaded = 0, failed = 0, pending = 0;
+                for (const img of [...imgs]) {
+                    if (!img.complete) { pending++; continue; }
+                    if (img.naturalWidth === 0) { failed++; continue; }
+                    try {
+                        await img.decode();
+                        loaded++;
+                    } catch { failed++; }
+                }
+                return { done: pending === 0, total: imgs.length, loaded, failed, pending };
+            }
+        """)
+
+        logger.info(
+            f"[BAOnly] 图片状态: 共 {result['total']} | 已解码 {result['loaded']} | "
+            f"失败 {result['failed']} | 待加载 {result['pending']}"
+        )
+
+        if result["done"]:
+            if result["failed"] == 0:
+                logger.info("[BAOnly] 全部图片加载并解码完成")
+            else:
+                logger.info(f"[BAOnly] 图片加载完成（{result['failed']} 张加载失败）")
+            break
+
+    # 等待浏览器完成合成和绘制
     await page.evaluate("""
         async () => {
-            for (let i = 0; i < 3; i++) {
+            for (let i = 0; i < 5; i++) {
                 await new Promise(r => requestAnimationFrame(r));
             }
         }
     """)
-    logger.info("[BAOnly] 页面加载完成，准备截图")
+    await page.wait_for_timeout(1000)
+    # 截图前再次确保教程/公告弹窗被移除（它们可能在首次加载后才出现）
+    await close_overlays(page)
+    # 移开鼠标，避免组件因悬停(:hover)被高亮
+    await reset_mouse(page)
+    logger.info("[BAOnly] 页面渲染完成，准备截图")
 
 
 async def set_page_size(page, size):
     """设置每页显示数量"""
-    if size not in SIZE_OPTIONS:
-        logger.warning(f"[BAOnly] 不支持的每页数量: {size}，可选值: {list(SIZE_OPTIONS.keys())}")
-        return
-
     from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    if size not in SIZE_OPTIONS:
+        logger.warning(
+            f"[BAOnly] 不支持的每页数量: {size}，可选值: {list(SIZE_OPTIONS.keys())}"
+        )
+        return
 
     trigger_btn = page.locator(".pagination-size-control .animated-select-trigger")
     try:
@@ -154,7 +254,7 @@ async def set_page_size(page, size):
 
     current_size_element = trigger_btn.locator("span")
     try:
-        current_text = await current_size_element.text_content(timeout=3000)
+        current_text = await current_size_element.text_content(timeout=2000)
     except PlaywrightTimeoutError:
         return
 
@@ -179,23 +279,6 @@ async def set_page_size(page, size):
         logger.warning(f"[BAOnly] 未找到选项: {option_text}")
 
 
-async def go_to_page(page, page_num):
-    """跳转到指定页码"""
-    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-
-    page_btn = page.locator(f".pagination-page:text-is('{page_num}')")
-    try:
-        await page_btn.wait_for(timeout=3000)
-        logger.info(f"[BAOnly] 点击第 {page_num} 页...")
-        await page_btn.click()
-        await wait_for_page_load(page)
-        logger.info(f"[BAOnly] 已跳转到第 {page_num} 页")
-        return True
-    except PlaywrightTimeoutError:
-        logger.warning(f"[BAOnly] 未找到第 {page_num} 页按钮")
-        return False
-
-
 def _inject_footer_js(
     playwright_ver: str,
     now_str: str,
@@ -205,7 +288,7 @@ def _inject_footer_js(
 ) -> str:
     parts = [
         f"截图时间：{now_str}",
-        "数据来源自 www.baonly.cn",
+        "数据来源自 beta.baonly.cn",
         f"Powered By Playwright v{playwright_ver}",
     ]
     if astrbot_ver:
@@ -226,7 +309,6 @@ def _inject_footer_js(
 async def capture_screenshot(
     page_size: int = 4,
     output_path: str = "screenshot.png",
-    page_num: int = 1,
     user_agent: str = "",
     astrbot_version: str = "",
     plugin_name: str = "",
@@ -236,20 +318,19 @@ async def capture_screenshot(
     proxy_username: str = "",
     proxy_password: str = "",
 ) -> str:
-    """异步截图入口函数
+    """异步截图入口函数（单页，只截当前页）
 
     Args:
         page_size: 每页显示数量 (4/6/10/20/23/50)
         output_path: 截图保存路径
-        page_num: 页码
         user_agent: 自定义 UA
         astrbot_version: AstrBot 版本号
         plugin_name: 插件名称
         plugin_version: 插件版本号
-        proxy_host: SOCKS5 代理地址
-        proxy_port: SOCKS5 代理端口
-        proxy_username: SOCKS5 代理用户名
-        proxy_password: SOCKS5 代理密码
+        proxy_host: HTTP 代理地址
+        proxy_port: HTTP 代理端口
+        proxy_username: HTTP 代理用户名
+        proxy_password: HTTP 代理密码
 
     Returns:
         str: 截图文件路径
@@ -283,28 +364,11 @@ async def capture_screenshot(
 
         await page.goto(BAONLY_URL, wait_until="networkidle", timeout=60000)
 
-        try:
-            close_btn = page.locator(".announcement-center-dialog .icon-button")
-            await close_btn.wait_for(timeout=5000)
-            await close_btn.click()
-            await page.wait_for_timeout(500)
-        except Exception:
-            pass
+        await close_overlays(page)
 
-        if page_size != 4:
-            await set_page_size(page, page_size)
+        await set_page_size(page, page_size)
 
         await wait_for_page_load(page)
-
-        if page_num > 1:
-            await go_to_page(page, page_num)
-
-        # 隐藏右下角公告浮岛
-        try:
-            island = page.locator(".announcement-island")
-            await island.evaluate("el => el.style.display = 'none'")
-        except Exception:
-            pass
 
         await page.evaluate(
             _inject_footer_js(

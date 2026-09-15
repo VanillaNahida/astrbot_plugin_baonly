@@ -1,10 +1,14 @@
 name: astrbot_plugin_baonly
-display_name: 蔚蓝档案同人BAOnly查询
+display_name: 蔚蓝档案同人展BAOnly查询。
 desc: |
-  一个专为蔚蓝档案玩家打造的 BAOnly（蔚蓝档案 ONLY 同人展）活动查询与截图的AstrBot插件，
-  支持 Playwright 无头浏览器截图 BAOnly 活动列表页，并通过 BAOnly 公开 API 为 AI 提供活动信息查询能力。
-short_desc: 蔚蓝档案同人ONLY活动截图与查询
-version: v1.0.1
+  一个专为蔚蓝档案玩家打造的 BAOnly（蔚蓝档案 ONLY 同人展）活动查询、
+  截图与订阅推送的AstrBot插件。已全面迁移至 beta.baonly.cn：
+  - Playwright 无头浏览器截图 BAOnly 活动列表页（支持 4/6/10/20/23/50 场/页）
+  - LLM 工具与命令组均可查询展会列表与详情
+  - 支持 WebSocket 长连接订阅活动变更，并按各群聊/私聊会话配置主动推送
+  - 提供 WebUI 插件页简洁管理订阅渠道
+short_desc: 蔚蓝档案同人ONLY活动截图、查询与订阅推送
+version: v2.0.0
 author: 香草味的纳西妲喵（VanillaNahida）
 
 repo: https://github.com/VanillaNahida/astrbot_plugin_baonly
@@ -15,4 +19,5 @@ tags:
   - BlueArchive
   - 漫展
   - 信息查询
+  - 订阅推送
   - 实用工具

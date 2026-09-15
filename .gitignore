@@ -207,3 +207,4 @@ marimo/_lsp/
 __marimo__/
 
 api.md
+openapi.json

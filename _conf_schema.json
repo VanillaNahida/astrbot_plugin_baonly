@@ -1,15 +1,16 @@
 {
-  "user_agent": {
-    "description": "自定义无头浏览器 User-Agent",
-    "type": "string",
-    "hint": "Playwright 无头浏览器请求网页时使用的 User-Agent 标识",
-    "default": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
-  },
   "token": {
-    "description": "API Token",
+    "description": "BAOnly beta 站 API Key",
     "type": "string",
-    "hint": "调用 BAOnly API 时使用的 Bearer Token，用于 Authorization 请求头，需要加群 295829474 联系管理员获取。",
+    "hint": "用于 x-api-key 请求头（查询 REST + WebSocket 订阅握手）。需在 beta.baonly.cn 申请，具备 stream:events 权限才能收到推送。",
+    "secret": true,
     "default": ""
+  },
+  "user_agent": {
+    "description": "请求网页 / API 时使用的 User-Agent",
+    "type": "string",
+    "hint": "Playwright 无头浏览器与查询 API 使用的 User-Agent 标识",
+    "default": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
   },
   "proxy_host": {
     "description": "HTTP 代理地址",
@@ -32,13 +33,38 @@
   "proxy_password": {
     "description": "HTTP 代理密码",
     "type": "string",
-    "hint": "HTTP 代理认证密码",
+    "hint": "HTTP 代理认证密码，建议用秘密字段存储",
+    "secret": true,
     "default": ""
   },
   "extra_wait_seconds": {
     "description": "额外等待秒数",
     "type": "int",
-    "hint": "截图前额外等待的秒数，用于等待异步加载的资源，默认为 0，请视情况调整。",
+    "hint": "截图前额外等待的秒数，用于等待异步加载的资源，默认为 0",
     "default": 0
+  },
+  "push_delay_seconds": {
+    "description": "推送基础延时（秒）",
+    "type": "int",
+    "hint": "每次向订阅渠道主动推送前的基础等待秒数；实际会额外叠加 0.5~1 秒随机抖动，降低风控风险。默认 0",
+    "default": 0
+  },
+  "ws_ping_interval": {
+    "description": "WebSocket 心跳间隔（秒）",
+    "type": "int",
+    "hint": "与 beta 站保持长连接的心跳频率，默认 30",
+    "default": 30
+  },
+  "ws_reconnect_interval": {
+    "description": "WebSocket 断线重连间隔（秒）",
+    "type": "int",
+    "hint": "断线后每隔多久重连一次，默认 30",
+    "default": 30
+  },
+  "events_page_size": {
+    "description": "活动列表默认每页条数",
+    "type": "int",
+    "hint": "查询 API 默认每页返回条数，默认 20，最大 50",
+    "default": 20
   }
 }

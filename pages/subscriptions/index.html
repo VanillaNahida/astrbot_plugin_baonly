@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>订阅管理 - BAOnly</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <h1>BAOnly 订阅管理</h1>
+        <p class="subtitle">管理需要接收活动变更推送的「群聊 / 私聊」渠道</p>
+      </header>
+
+      <section class="form-card">
+        <h2>新增订阅</h2>
+        <div class="field">
+          <label for="type">渠道类型</label>
+          <select id="type" name="type">
+            <option value="group">群聊</option>
+            <option value="private">私聊</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="channel-id">号码（群号或 QQ 号）</label>
+          <input
+            id="channel-id"
+            name="channel_id"
+            type="text"
+            placeholder="群聊填群号，私聊填 QQ 号"
+            required
+          />
+        </div>
+        <div class="actions">
+          <button type="button" class="btn primary" id="build-umo">生成并添加订阅</button>
+        </div>
+      </section>
+
+      <section class="form-card">
+        <div class="group-add-header">
+          <h2>从群列表添加</h2>
+          <button type="button" class="btn" id="open-groups">打开群列表</button>
+        </div>
+        <p class="hint">点击按钮在弹窗中选择群，可多选后一并订阅。</p>
+      </section>
+
+      <section class="list-card">
+        <div class="list-header">
+          <h2>已订阅渠道 <span id="count" class="badge">0</span></h2>
+          <button type="button" class="btn" id="refresh-list">刷新</button>
+        </div>
+        <table class="sub-table">
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>号码</th>
+              <th>显示名称</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="sub-list"></tbody>
+        </table>
+        <p id="empty" class="empty">暂无订阅渠道</p>
+      </section>
+
+      <footer>
+        <code id="storage-path"></code>
+      </footer>
+    </div>
+
+    <div id="groups-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <div class="modal-header">
+          <h2>选择要推送的群</h2>
+          <button type="button" class="btn" id="close-groups">关闭</button>
+        </div>
+        <p class="modal-hint">可多选，选好后点击下方按钮一并订阅。</p>
+        <div class="modal-body">
+          <ul id="group-select" class="group-select"></ul>
+          <p id="group-empty" class="empty">正在加载群列表，请稍候……</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn primary" id="confirm-groups">订阅所选群</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

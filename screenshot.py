@@ -1,10 +1,12 @@
 import os
+import sys
 import argparse
+import subprocess
 from datetime import datetime
 from importlib.metadata import version
 from playwright.sync_api import sync_playwright
 
-url = "https://www.baonly.cn/"
+url = "https://beta.baonly.cn/"
 
 # 反调试注入脚本
 anti_debug_script = """
@@ -77,12 +79,43 @@ Object.defineProperty(navigator, 'languages', {
 });
 """
 
+def close_tour(page):
+    """关闭新手教程引导弹窗（点击“不用啦”按钮，正确退出，避免报错）"""
+    nudge = page.locator(".tour__nudge")
+    if not nudge.is_visible(timeout=2000):
+        return
+    skip_btn = nudge.locator("button", has_text="不用啦")
+    if skip_btn.first.is_visible(timeout=2000):
+        skip_btn.first.click()
+        page.wait_for_timeout(300)
+
 def close_announcement(page):
-    """关闭公告弹窗"""
+    """关闭公告弹窗（点击关闭按钮，避免直接删元素导致报错）"""
+    # 新版：scrim 遮罩下的公告弹窗
+    scrim_btn = page.locator('body > div.scrim.fixed.inset-0 button[aria-label="关闭"]')
+    if scrim_btn.first.is_visible(timeout=2000):
+        scrim_btn.first.click()
+        page.wait_for_timeout(300)
+        return
+    # 旧版：公告中心弹窗
     close_btn = page.locator(".announcement-center-dialog .icon-button")
-    if close_btn.is_visible(timeout=5000):
-        close_btn.click()
-        page.wait_for_timeout(500)
+    if close_btn.first.is_visible(timeout=2000):
+        close_btn.first.click()
+        page.wait_for_timeout(300)
+
+def close_overlays(page):
+    """截图前关闭公告弹窗与新手教程引导"""
+    close_announcement(page)
+    close_tour(page)
+
+def reset_mouse(page):
+    """将鼠标移到页脚空白区域，清除组件:hover 高亮状态"""
+    try:
+        height = page.viewport_size["height"]
+        page.mouse.move(2, height - 2)
+        page.wait_for_timeout(300)
+    except Exception:
+        pass
 
 def wait_for_page_load(page, max_retries=8):
     """等待页面完全加载，包括所有懒加载图片"""
@@ -103,10 +136,10 @@ def wait_for_page_load(page, max_retries=8):
                     window.scrollTo(0, y);
                     await new Promise(r => setTimeout(r, 150));
                 }
+                // 滚动到页面底部（页脚）后停留，等待下方懒加载组件显现并完成淡入
                 window.scrollTo(0, maxScroll);
-                await new Promise(r => setTimeout(r, 300));
-                window.scrollTo(0, 0);
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, 1500));
+                // 不滚回顶部，保持页面停在底部，避免下方组件再次被隐藏
             }
         """)
 
@@ -161,6 +194,10 @@ def wait_for_page_load(page, max_retries=8):
         }
     """)
     page.wait_for_timeout(1000)
+    # 截图前再次确保教程/公告弹窗被移除（它们可能在首次加载后才出现）
+    close_overlays(page)
+    # 移开鼠标，避免组件因悬停(:hover)被高亮
+    reset_mouse(page)
     print("页面渲染完成，准备截图")
 
 def set_page_size(page, size):
@@ -218,7 +255,7 @@ def go_to_page(page, page_num):
         return False
 
 def inject_footer(page):
-    """注入页脚版本信息"""
+    """注入页脚版本信息（追加到列表元素内部，确保被元素截图包含）"""
     playwright_version = version("playwright")
     now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
     page.evaluate(f"""
@@ -243,6 +280,23 @@ def get_total_pages(page):
     except:
         return 1
 
+def get_chrome_path():
+    """获取系统 Chrome 路径"""
+    if sys.platform == "win32":
+        # Windows 常见路径
+        paths = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe")
+        ]
+        for path in paths:
+            if os.path.exists(path):
+                return path
+    elif sys.platform == "darwin":  # macOS
+        return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    else:  # Linux
+        return "/usr/bin/google-chrome"
+
 def main():
     parser = argparse.ArgumentParser(description='BAOnly网页截图工具')
     parser.add_argument('--page', type=int, default=1, help='指定页码（默认第1页）')
@@ -255,13 +309,14 @@ def main():
     print(f"正在访问 {url} ...")
     with sync_playwright() as p:
         browser = p.chromium.launch(
+            executable_path=get_chrome_path(),  # 使用系统浏览器
             headless=False,
             args=["--disable-blink-features=AutomationControlled"]
         )
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
         page.add_init_script(anti_debug_script)
         page.goto(url, wait_until="networkidle", timeout=30000)
-        close_announcement(page)
+        close_overlays(page)
 
         if args.page_size != 4:
             set_page_size(page, args.page_size)
