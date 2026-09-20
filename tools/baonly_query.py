@@ -26,6 +26,7 @@ async def fetch_events_list(token: str, user_agent: str, **kwargs) -> dict:
     tag = kwargs.get("tag", "")
     sort = kwargs.get("sort", "timeAsc")
     page_size = kwargs.get("page_size", 20)
+    page = kwargs.get("page", 1)
 
     headers = {
         "User-Agent": user_agent,
@@ -34,10 +35,12 @@ async def fetch_events_list(token: str, user_agent: str, **kwargs) -> dict:
 
     is_all = status == "all"
     params = {
-        "status": status if not is_all else "upcoming",
+        "status": status,
         "includePast": str(include_past or is_all).lower(),
     }
 
+    if page:
+        params["page"] = page
     if city:
         params["cityName"] = city
     if province:
@@ -48,6 +51,34 @@ async def fetch_events_list(token: str, user_agent: str, **kwargs) -> dict:
         params["sort"] = sort
     if page_size:
         params["pageSize"] = page_size
+
+    # 以下为 openapi.json 同步的新增查询参数
+    if kwargs.get("q"):
+        params["q"] = kwargs["q"]
+    if kwargs.get("updated_since"):
+        params["updatedSince"] = kwargs["updated_since"]
+    if kwargs.get("region"):
+        params["region"] = kwargs["region"]
+    if kwargs.get("city_id"):
+        params["cityId"] = kwargs["city_id"]
+    if kwargs.get("min_price_cents") is not None:
+        params["minPriceCents"] = kwargs["min_price_cents"]
+    if kwargs.get("max_price_cents") is not None:
+        params["maxPriceCents"] = kwargs["max_price_cents"]
+    if kwargs.get("date_mode"):
+        params["dateMode"] = kwargs["date_mode"]
+    if kwargs.get("date"):
+        params["date"] = kwargs["date"]
+    if kwargs.get("date_from"):
+        params["dateFrom"] = kwargs["date_from"]
+    if kwargs.get("date_to"):
+        params["dateTo"] = kwargs["date_to"]
+    if kwargs.get("highlighted_only"):
+        params["highlightedOnly"] = "true"
+    if kwargs.get("featured_only"):
+        params["featuredOnly"] = "true"
+    if kwargs.get("carousel_only"):
+        params["carouselOnly"] = "true"
 
     url = f"{BAONLY_API_BASE}/events"
 
@@ -127,6 +158,10 @@ def _map_event_list_item(item):
         "saleFlag": item.get("saleFlag"),
         "wishCount": item.get("wishCount"),
         "highlightColor": item.get("highlightColor"),
+        "featured": item.get("featured", False),
+        "featuredMode": item.get("featuredMode"),
+        "detailEnabled": item.get("detailEnabled", False),
+        "distanceKm": item.get("distanceKm"),
         "province": city.get("province") or city.get("name"),
         "city": city.get("name"),
         "cityId": city.get("id"),
@@ -179,15 +214,53 @@ class BAOnlyQueryTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "description": "按标签筛选活动，例如\"ONLY\"、\"同人展\"。",
                 },
+                "q": {
+                    "type": "string",
+                    "description": "按活动标题关键字筛选。",
+                },
+                "region": {
+                    "type": "string",
+                    "description": "按大区筛选活动，例如\"华东\"、\"华南\"。",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "按具体日期筛选活动，格式 yyyy-MM-dd，例如 2026-10-01。",
+                },
+                "date_from": {
+                    "type": "string",
+                    "description": "按日期范围筛选（起始），格式 yyyy-MM-dd。",
+                },
+                "date_to": {
+                    "type": "string",
+                    "description": "按日期范围筛选（结束），格式 yyyy-MM-dd。",
+                },
+                "featured_only": {
+                    "type": "boolean",
+                    "description": "只返回运营精选的活动。",
+                },
+                "updated_since": {
+                    "type": "string",
+                    "description": (
+                        "只返回这个时间点之后改动过的场次（ISO 8601 时间串），"
+                        "用于断线重连后的增量对齐。"
+                    ),
+                },
                 "sort": {
                     "type": "string",
                     "description": "排序方式。timeAsc=按时间升序，startAsc=开始时间升序，"
-                    "priceAsc=价格升序。默认 timeAsc。",
-                    "enum": ["timeAsc", "startAsc", "startDesc", "priceAsc", "priceDesc"],
+                    "priceAsc=价格升序，distance=按距离升序（需传 lat/lng）。默认 timeAsc。",
+                    "enum": [
+                        "timeAsc",
+                        "startAsc",
+                        "startDesc",
+                        "priceAsc",
+                        "priceDesc",
+                        "distance",
+                    ],
                 },
                 "page_size": {
                     "type": "integer",
-                    "description": "每页返回条数，默认 20，最大 50。",
+                    "description": "每页返回条数，默认 20，最大 500。",
                 },
             },
         }

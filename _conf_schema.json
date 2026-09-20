@@ -64,7 +64,7 @@
   "events_page_size": {
     "description": "活动列表默认每页条数",
     "type": "int",
-    "hint": "查询 API 默认每页返回条数，默认 20，最大 50",
+    "hint": "查询 API 默认每页返回条数，默认 20，最大 500",
     "default": 20
   }
 }

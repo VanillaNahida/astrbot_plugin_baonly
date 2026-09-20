@@ -52,10 +52,11 @@ class SubscriptionPageService:
             return {"ok": False, "message": "号码（群号或 QQ 号）不能为空"}
         umo = (umo or "").strip()
         if not umo:
-            # 无 umo 时按固定格式拼装：AstrBot:GroupMessage:<群号>（私聊为 FriendMessage）
+            # 无 umo 时按固定格式拼装：<平台实例>:GroupMessage:<群号>（私聊为 FriendMessage）
             # 这是本插件订阅推送目标平台的统一会话标识。
             msg_type = "GroupMessage" if is_group else "FriendMessage"
-            umo = f"AstrBot:{msg_type}:{channel_id}"
+            platform = self._group_cache.first_platform_id() or "AstrBot"
+            umo = f"{platform}:{msg_type}:{channel_id}"
         resolved_display = await _resolve_display(
             self._group_cache, bool(is_group), channel_id, display
         )

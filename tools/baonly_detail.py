@@ -71,31 +71,55 @@ def _map_event_detail(item):
         "saleFlag": item.get("saleFlag"),
         "wishCount": item.get("wishCount"),
         "highlightColor": item.get("highlightColor"),
+        "featured": item.get("featured", False),
+        "featuredMode": item.get("featuredMode"),
+        "detailEnabled": item.get("detailEnabled", False),
+        "distanceKm": item.get("distanceKm"),
         "province": city.get("province") or city.get("name"),
         "city": city.get("name"),
         "cityId": city.get("id"),
         "venueName": venue.get("name"),
         "address": venue.get("address"),
         "organizer": organizer.get("name"),
-        "tags": [t.get("name") for t in tags],
+        "tags": [
+            {
+                "name": t.get("name"),
+                "color": t.get("color"),
+                "highlight": t.get("highlight"),
+                "beforeTitle": t.get("beforeTitle"),
+            }
+            for t in tags
+        ],
         "description": item.get("description"),
         "coverUrl": cover.get("url"),
         "bannerUrl": banner.get("url"),
         "tickets": [
             {
                 "name": t.get("name"),
+                "screenName": t.get("screenName"),
                 "priceCents": t.get("priceCents"),
                 "priceLabel": t.get("priceLabel"),
                 "saleFlag": t.get("saleFlag"),
+                "saleStartAt": t.get("saleStartAt"),
+                "saleEndAt": t.get("saleEndAt"),
             }
             for t in tickets
         ],
         "guests": [
-            {"name": g.get("name"), "description": g.get("description")}
+            {
+                "name": g.get("name"),
+                "description": g.get("description"),
+                "imageUrl": (g.get("image") or {}).get("url"),
+            }
             for g in guests
         ],
         "infoItems": [
-            {"section": i.get("section"), "title": i.get("title"), "content": i.get("content")}
+            {
+                "id": i.get("id"),
+                "section": i.get("section"),
+                "title": i.get("title"),
+                "content": i.get("content"),
+            }
             for i in info_items
         ],
         "changeNotices": [

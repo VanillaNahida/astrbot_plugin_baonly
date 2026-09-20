@@ -63,6 +63,7 @@
 | `/baonly detail` | `/baonly detail <活动ID>` | 查询单个展会详情 |
 | `/baonly sub` | `/baonly sub` | 订阅当前会话，展会变更时自动推送 |
 | `/baonly unsub` | `/baonly unsub` | 取消订阅当前会话 |
+| `/baonly status` | `/baonly status` | 查看推送连接状态（连接时长、API Key 有效性、最近推送等） |
 | `/baonly list` | `/baonly list` | 查看全部订阅渠道（群聊显示「群名+群号」，私聊显示「昵称+QQ号」） |
 
 命令在群聊与私聊中均可使用。

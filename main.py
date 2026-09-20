@@ -11,7 +11,7 @@ from .tools import BAOnlyQueryTool, BAOnlyEventDetailTool
 from .tools.baonly_query import fetch_events_list, DEFAULT_USER_AGENT
 from .tools.baonly_detail import fetch_event_detail
 from .baonly_screenshot import capture_screenshot
-from .subscriptions import SubscriptionStore
+from .subscriptions import SubscriptionStore, _normalize_umo
 from .stream_notifier import StreamNotifier
 from .group_cache import GroupInfoCache, extract_channel_id
 from .page_service import SubscriptionPageService, _resolve_display
@@ -151,23 +151,36 @@ class BAOnlyPlugin(Star):
     @baonly.command("sub", alias="subscribe")
     async def baonly_sub(self, event: AstrMessageEvent):
         """订阅当前会话，活动变更时自动推送。用法：baonly sub"""
-        umo = event.unified_msg_origin
         is_group = bool(getattr(event.message_obj, "group_id", ""))
         channel_id = (
             str(event.message_obj.group_id) if is_group else event.get_sender_id()
         )
+        umo = _normalize_umo(event.unified_msg_origin, is_group, channel_id)
         display = await _resolve_display(self._group_cache, is_group, channel_id, "")
-        await self._store.add(umo, is_group, channel_id, display)
-        yield event.plain_result("已订阅当前会话，展会变更将自动推送。")
+        added = await self._store.add(umo, is_group, channel_id, display)
+        if added:
+            yield event.plain_result("已订阅当前会话，展会变更将自动推送。")
+        else:
+            yield event.plain_result("当前会话已在订阅列表中，无需重复订阅。")
 
     @baonly.command("unsub", alias="unsubscribe")
     async def baonly_unsub(self, event: AstrMessageEvent):
         """取消订阅当前会话。用法：baonly unsub"""
-        umo = event.unified_msg_origin
+        is_group = bool(getattr(event.message_obj, "group_id", ""))
+        channel_id = (
+            str(event.message_obj.group_id) if is_group else event.get_sender_id()
+        )
+        umo = _normalize_umo(event.unified_msg_origin, is_group, channel_id)
         removed = await self._store.remove(umo)
         yield event.plain_result(
             "已取消订阅当前会话。" if removed else "当前会话未在订阅列表中。"
         )
+
+    @baonly.command("status")
+    async def baonly_status(self, event: AstrMessageEvent):
+        """查看订阅推送连接状态。用法：baonly status"""
+        lines = self._notifier.describe_status()
+        yield event.plain_result("\n".join(lines))
 
     @baonly.command("list")
     async def baonly_list(self, event: AstrMessageEvent):

@@ -7,18 +7,22 @@ from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 PLUGIN_NAME = "astrbot_plugin_baonly"
 
-# 本插件目标平台会话统一标识：AstrBot:<GroupMessage|FriendMessage>:<群号/QQ号>
-# 群聊用 GroupMessage，私聊用 FriendMessage。
+# 本插件目标平台会话统一标识：<平台实例>:<GroupMessage|FriendMessage>:<群号/QQ号>
+# 群聊用 GroupMessage，私聊用 FriendMessage。平台实例前缀沿用事件原始
+# unified_msg_origin 的前缀（如 aiocqhttp），缺失时才兜底为 AstrBot。
 
 
 def _normalize_umo(umo: str, is_group: bool, channel_id: str = "") -> str:
     token = "GroupMessage" if is_group else "FriendMessage"
     channel_id = str(channel_id or "").strip()
+    raw = str(umo or "").strip()
+    parts = raw.split(":")
+    # 沿用原始平台实例前缀，保证与 AstrBot 的 unified_msg_origin / send_message 匹配
+    platform = parts[0] if parts and parts[0] else "AstrBot"
     if channel_id:
         # 有频道号时统一重建为严格目标格式
-        return f"AstrBot:{token}:{channel_id}"
+        return f"{platform}:{token}:{channel_id}"
     # 无频道号时仅修正类型令牌大小写/旧值
-    parts = str(umo).split(":")
     if len(parts) >= 3 and parts[1].lower() in (
         "group",
         "private",

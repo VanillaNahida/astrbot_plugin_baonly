@@ -68,6 +68,17 @@ class GroupInfoCache:
             return "aiocqhttp"
         return clients[0][1]
 
+    def first_platform_id(self) -> str:
+        """返回首个已连接平台的实例 ID（unified_msg_origin 的前缀），失败时返回空串。"""
+        for inst, _platform_name in self._iter_clients_with_platform():
+            try:
+                pid = str(inst.meta().id or "").strip()
+                if pid:
+                    return pid
+            except Exception:
+                continue
+        return ""
+
     def invalidate(self, group_id: str | None = None) -> None:
         if group_id:
             self._group_detail.pop(str(group_id).strip(), None)
