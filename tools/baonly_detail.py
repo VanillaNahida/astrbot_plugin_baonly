@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 from pydantic import Field
@@ -9,7 +10,7 @@ from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 
-from .baonly_query import BAONLY_API_BASE
+from .baonly_query import BAONLY_API_BASE, fetch_events_list
 
 
 async def fetch_event_detail(token: str, user_agent: str, event_id: str) -> dict:
@@ -73,11 +74,13 @@ def _map_event_detail(item):
         "highlightColor": item.get("highlightColor"),
         "featured": item.get("featured", False),
         "featuredMode": item.get("featuredMode"),
+        "markers": item.get("markers") or [],
         "detailEnabled": item.get("detailEnabled", False),
         "distanceKm": item.get("distanceKm"),
         "province": city.get("province") or city.get("name"),
         "city": city.get("name"),
         "cityId": city.get("id"),
+        "region": city.get("region"),
         "venueName": venue.get("name"),
         "address": venue.get("address"),
         "organizer": organizer.get("name"),
@@ -135,6 +138,129 @@ def _map_event_detail(item):
         "pcTicketUrl": item.get("pcTicketUrl"),
         "mobileTicketUrl": item.get("mobileTicketUrl"),
     }
+
+
+_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+# 文字检索时各字段的权重
+_FIELD_WEIGHTS = (
+    ("title", 60),
+    ("organizer", 45),
+    ("city", 35),
+    ("province", 30),
+    ("venueName", 25),
+    ("address", 20),
+)
+
+
+def looks_like_id(value: str) -> bool:
+    """判断输入是否像活动 ID（纯字母数字下划线连字符）。"""
+    return bool(_ID_PATTERN.match((value or "").strip()))
+
+
+def _score_event(event: dict, tokens: list) -> int:
+    """按标题/主办/城市/省份/场馆/地址给候选活动打分，0 表示不匹配。"""
+    fields = {
+        key: str(event.get(key) or "").lower() for key, _ in _FIELD_WEIGHTS
+    }
+    tags = " ".join(str(t) for t in (event.get("tags") or [])).lower()
+
+    matched = 0
+    total = 0
+    for token in tokens:
+        best = 0
+        for key, weight in _FIELD_WEIGHTS:
+            value = fields[key]
+            if not value:
+                continue
+            if value == token:
+                best = max(best, weight + 40)
+            elif token in value:
+                best = max(best, weight)
+        if not best and token in tags:
+            best = 15
+        if best:
+            matched += 1
+            total += best
+
+    if not matched:
+        return 0
+    # 匹配到的关键词越多越优先；未结束的活动略微加权
+    total += matched * 20
+    state = event.get("state")
+    if state == "ongoing":
+        total += 8
+    elif state == "upcoming":
+        total += 5
+    return total
+
+
+async def _search_candidates(token: str, user_agent: str, query: str) -> list:
+    """按关键词检索候选活动，优先服务端标题匹配，无结果时放宽到全量列表。"""
+    collected = {}
+
+    data = await fetch_events_list(
+        token,
+        user_agent,
+        q=query,
+        status="all",
+        include_past=True,
+        page_size=50,
+    )
+    for item in data.get("events") or []:
+        event_id = str(item.get("id") or "")
+        if event_id:
+            collected[event_id] = item
+
+    if collected:
+        return list(collected.values())
+
+    # 主办方/城市/场馆等字段服务端不参与 q 匹配，这里拉取较宽的活动集本地打分
+    data = await fetch_events_list(
+        token,
+        user_agent,
+        status="all",
+        include_past=True,
+        page_size=200,
+    )
+    for item in data.get("events") or []:
+        event_id = str(item.get("id") or "")
+        if event_id:
+            collected[event_id] = item
+    return list(collected.values())
+
+
+async def resolve_event(token: str, user_agent: str, query: str):
+    """把用户输入解析为 ``(event_id, 原始详情dict)``，无法匹配时返回 ``(None, None)``。
+
+    输入既可以是活动 ID，也可以是标题 / 主办方 / 城市 / 场馆等文字描述。
+    """
+    query = (query or "").strip()
+    if not query:
+        return None, None
+
+    if looks_like_id(query):
+        data = await fetch_event_detail(token, user_agent, query)
+        if not (data.get("not_found") or data.get("error")):
+            return query, data
+
+    tokens = [t for t in re.split(r"[\s,，、]+", query.lower()) if t]
+    candidates = await _search_candidates(token, user_agent, query)
+    if not candidates or not tokens:
+        return None, None
+
+    best = max(candidates, key=lambda item: _score_event(item, tokens))
+    if _score_event(best, tokens) <= 0:
+        return None, None
+
+    event_id = str(best.get("id") or "")
+    if not event_id:
+        return None, None
+
+    data = await fetch_event_detail(token, user_agent, event_id)
+    if data.get("not_found") or data.get("error"):
+        return event_id, None
+    return event_id, data
 
 
 @dataclass

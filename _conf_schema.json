@@ -43,6 +43,24 @@
     "hint": "截图前额外等待的秒数，用于等待异步加载的资源，默认为 0",
     "default": 0
   },
+  "detail_image_enabled": {
+    "description": "详情图片渲染",
+    "type": "bool",
+    "hint": "开启后，/baonly detail 与 LLM 工具会把展会详情渲染成卡片图片发送；关闭则仅返回文本",
+    "default": true
+  },
+  "detail_render_mode": {
+    "description": "详情图片渲染方式",
+    "type": "string",
+    "options": ["auto", "astrbot", "playwright"],
+    "labels": [
+      "自动（优先 AstrBot，失败回退 Playwright）",
+      "AstrBot 文转图",
+      "Playwright 本地渲染"
+    ],
+    "hint": "auto：优先使用 AstrBot 文转图，失败时自动回退本地 Playwright；astrbot：仅用 AstrBot 文转图（需能访问 t2i 端点）；playwright：仅用本地 Playwright（需已安装浏览器内核）",
+    "default": "auto"
+  },
   "push_delay_seconds": {
     "description": "推送基础延时（秒）",
     "type": "int",

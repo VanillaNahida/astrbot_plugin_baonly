@@ -30,7 +30,16 @@ _TRACKED_FIELDS = (
     "province",
     "city",
     "venueName",
+    "markers",
+    "featured",
 )
+
+# 运营标记（markers）中文文案
+_MARKER_LABELS = {
+    "cancelled": "已取消",
+    "postponed": "已延期",
+    "venueChanged": "地点变更",
+}
 
 
 def _now_text() -> str:
@@ -58,18 +67,38 @@ def _summarize(data: dict) -> dict:
         "province": data.get("province") or "",
         "city": data.get("city") or "",
         "venueName": data.get("venueName") or "",
+        "markers": _marker_labels(data.get("markers")),
+        "featured": "1" if data.get("featured") else "",
         "pcTicketUrl": data.get("pcTicketUrl") or "",
     }
 
 
+def _marker_labels(value) -> str:
+    """把 markers 转成中文文案；兼容列表与已拼接的字符串。"""
+    if not value:
+        return ""
+    items = value if isinstance(value, (list, tuple)) else str(value).split("、")
+    return "、".join(_MARKER_LABELS.get(str(m), str(m)) for m in items if m)
+
+
 def _has_tracked_change(old_s: dict, new_s: dict) -> bool:
-    return any(old_s.get(k) != new_s.get(k) for k in _TRACKED_FIELDS)
+    for key in _TRACKED_FIELDS:
+        # 旧缓存里没有该字段时不参与对比，避免插件升级后误报变更
+        if key not in old_s:
+            continue
+        if old_s.get(key) != new_s.get(key):
+            return True
+    return False
 
 
 def _format_event_text(event_id: str, action: str, info: dict) -> str:
     """把一次变更组装成推送文本。action: 新增 / 移除 / 更新。"""
     title = info.get("title") or "（无标题）"
     lines = [f"[BAOnly活动{action}] {title}"]
+
+    markers = _marker_labels(info.get("markers"))
+    if markers:
+        lines.append(f"标记：{markers}")
 
     time_label = info.get("timeLabel") or ""
     if time_label:

@@ -6,13 +6,19 @@ from importlib.metadata import version
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star
 from astrbot.api import logger, AstrBotConfig
+from astrbot.core.star.filter.command import GreedyStr
 
-from .tools import BAOnlyQueryTool, BAOnlyEventDetailTool
+from .tools import BAOnlyQueryTool, BAOnlyEventDetailTool, BAOnlyEventImageTool
 from .tools.baonly_query import fetch_events_list, DEFAULT_USER_AGENT
-from .tools.baonly_detail import fetch_event_detail
+from .tools.baonly_detail import resolve_event, _map_event_detail
 from .baonly_screenshot import capture_screenshot
+from .detail_card import (
+    build_detail_reply_chain,
+    render_detail_card,
+    render_options_from_config,
+)
 from .subscriptions import SubscriptionStore, _normalize_umo
-from .stream_notifier import StreamNotifier
+from .stream_notifier import StreamNotifier, _marker_labels
 from .group_cache import GroupInfoCache, extract_channel_id
 from .page_service import SubscriptionPageService, _resolve_display
 from .web import BAOnlyWebController
@@ -52,6 +58,10 @@ class BAOnlyPlugin(Star):
         self._detail_tool = BAOnlyEventDetailTool()
         self._detail_tool.set_config(self.config)
         self.context.add_llm_tools(self._detail_tool)
+
+        self._image_tool = BAOnlyEventImageTool()
+        self._image_tool.set_config(self.config)
+        self.context.add_llm_tools(self._image_tool)
         logger.info("[BAOnly] 插件已初始化，LLM 工具已注册")
 
         # WebSocket 后台推送任务
@@ -106,46 +116,77 @@ class BAOnlyPlugin(Star):
         lines = [f"共 {data.get('events_count', 0)} 场相关活动（查询: status={status}, city={city or '全部'}）："]
         for e in events[:10]:
             loc = f"{e.get('province') or ''} {e.get('city') or ''}".strip()
-            lines.append(
-                f"- [{e.get('state')}] {e.get('title')}\n"
-                f"  时间: {e.get('timeLabel') or e.get('startAt') or '待定'}\n"
-                f"  地点: {loc} {e.get('venueName') or ''}".rstrip() + "\n"
-                f"  票价: {e.get('priceLabel') or '待定'} | 售票: {e.get('saleFlag') or '未知'}\n"
-                f"  活动ID: {e.get('id')}"
-            )
+            block = [
+                f"- [{e.get('state')}] {e.get('title')}",
+                f"  时间: {e.get('timeLabel') or e.get('startAt') or '待定'}",
+                f"  地点: {loc} {e.get('venueName') or ''}".rstrip(),
+                f"  票价: {e.get('priceLabel') or '待定'} | 售票: {e.get('saleFlag') or '未知'}",
+            ]
+            markers = _marker_labels(e.get("markers"))
+            if markers:
+                block.append(f"  标记: {markers}")
+            block.append(f"  活动ID: {e.get('id')}")
+            lines.append("\n".join(block))
         yield event.plain_result("\n".join(lines))
 
     @baonly.command("detail")
-    async def baonly_detail(self, event: AstrMessageEvent, event_id: str = ""):
-        """查询单个 BAOnly 展会详情。用法：baonly detail <event_id>"""
-        event_id = (event_id or "").strip()
-        if not event_id:
-            yield event.plain_result("请提供活动ID，例如：baonly detail abc123")
-            return
-        token = self.config.get("token", "")
-        user_agent = self.config.get("user_agent", DEFAULT_USER_AGENT)
-        data = await fetch_event_detail(token, user_agent, event_id)
-        if data.get("not_found") or data.get("error"):
+    async def baonly_detail(self, event: AstrMessageEvent, keyword: GreedyStr):
+        """查询单个 BAOnly 展会详情。支持活动ID，也支持标题/主办方/城市/场馆等关键词检索。
+        用法：baonly detail <活动ID|关键词>"""
+        query = str(keyword or "").strip()
+        if not query:
             yield event.plain_result(
-                f"查询失败: {data.get('error', '未找到该活动')}"
+                "请提供活动ID或关键词，例如：baonly detail 广州蔚蓝档案"
             )
             return
-        loc = f"{data.get('province') or ''} {data.get('city') or ''} {data.get('venueName') or ''}".strip()
-        lines = [
-            f"- {data.get('title')}",
-            f"  时间: {data.get('timeLabel') or data.get('startAt') or '待定'}",
-            f"  地点: {loc or '待定'} {data.get('address') or ''}".rstrip(),
-            f"  票价: {data.get('priceLabel') or '待定'} | 售票: {data.get('saleFlag') or '未知'}",
-        ]
-        tickets = data.get("tickets") or []
+
+        token = self.config.get("token", "")
+        user_agent = self.config.get("user_agent", DEFAULT_USER_AGENT)
+        event_id, data = await resolve_event(token, user_agent, query)
+        if not event_id or not data:
+            yield event.plain_result(
+                f"未找到匹配「{query}」的活动，请换个关键词试试。"
+            )
+            return
+
+        # 已启用图片渲染：发送「购票链接 + 详情卡片图片」
+        if bool(self.config.get("detail_image_enabled", True)):
+            output_dir = os.path.abspath(os.path.join("data", "temp", PLUGIN_NAME))
+            try:
+                image_path = await render_detail_card(
+                    data,
+                    output_dir=output_dir,
+                    **render_options_from_config(self.config),
+                )
+                yield event.chain_result(build_detail_reply_chain(data, image_path))
+                return
+            except Exception as e:
+                logger.error(
+                    f"[BAOnly] 生成展会详情图片失败，回退文本输出: {e}", exc_info=True
+                )
+
+        detail = _map_event_detail(data)
+        loc = f"{detail.get('province') or ''} {detail.get('city') or ''} {detail.get('venueName') or ''}".strip()
+        lines = [f"- {detail.get('title')}"]
+        markers = _marker_labels(detail.get("markers"))
+        if markers:
+            lines.append(f"  标记: {markers}")
+        lines.extend(
+            [
+                f"  时间: {detail.get('timeLabel') or detail.get('startAt') or '待定'}",
+                f"  地点: {loc or '待定'} {detail.get('address') or ''}".rstrip(),
+                f"  票价: {detail.get('priceLabel') or '待定'} | 售票: {detail.get('saleFlag') or '未知'}",
+            ]
+        )
+        tickets = detail.get("tickets") or []
         if tickets:
             lines.append("  票档:")
             for t in tickets[:6]:
                 lines.append(f"    - {t.get('name') or '?'}：{t.get('priceLabel') or t.get('priceCents')}")
-        if data.get("description"):
-            lines.append(f"  简介: {data['description'][:200]}")
-        if data.get("pcTicketUrl"):
-            lines.append(f"  购票: {data['pcTicketUrl']}")
+        if detail.get("description"):
+            lines.append(f"  简介: {detail['description'][:200]}")
+        if detail.get("pcTicketUrl"):
+            lines.append(f"  购票: {detail['pcTicketUrl']}")
         yield event.plain_result("\n".join(lines))
 
     @baonly.command("sub", alias="subscribe")

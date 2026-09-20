@@ -79,6 +79,18 @@ async def fetch_events_list(token: str, user_agent: str, **kwargs) -> dict:
         params["featuredOnly"] = "true"
     if kwargs.get("carousel_only"):
         params["carouselOnly"] = "true"
+    if kwargs.get("marker"):
+        params["marker"] = kwargs["marker"]
+    if kwargs.get("holiday_name"):
+        params["holidayName"] = kwargs["holiday_name"]
+    if kwargs.get("lat") is not None:
+        params["lat"] = kwargs["lat"]
+    if kwargs.get("lng") is not None:
+        params["lng"] = kwargs["lng"]
+    if kwargs.get("max_distance_km") is not None:
+        params["maxDistanceKm"] = kwargs["max_distance_km"]
+    if kwargs.get("facets") is not None:
+        params["facets"] = str(bool(kwargs["facets"])).lower()
 
     url = f"{BAONLY_API_BASE}/events"
 
@@ -115,7 +127,7 @@ async def fetch_events_list(token: str, user_agent: str, **kwargs) -> dict:
 
     await record_events(items)
 
-    return {
+    result = {
         "total": total,
         "page": data.get("page", 1),
         "pageSize": data.get("pageSize", page_size),
@@ -125,11 +137,18 @@ async def fetch_events_list(token: str, user_agent: str, **kwargs) -> dict:
             "city": city,
             "province": province,
             "tag": tag,
+            "marker": kwargs.get("marker", ""),
             "include_past": include_past,
         },
         "events_count": len(items),
         "events": [_map_event_list_item(e) for e in items],
     }
+
+    # 筛选面板计数（facets）体积较大，仅在显式请求时回传
+    if kwargs.get("facets") is not None:
+        result["facets"] = data.get("facets")
+
+    return result
 
 
 def _safe_str(value, default=""):
@@ -160,11 +179,13 @@ def _map_event_list_item(item):
         "highlightColor": item.get("highlightColor"),
         "featured": item.get("featured", False),
         "featuredMode": item.get("featuredMode"),
+        "markers": item.get("markers") or [],
         "detailEnabled": item.get("detailEnabled", False),
         "distanceKm": item.get("distanceKm"),
         "province": city.get("province") or city.get("name"),
         "city": city.get("name"),
         "cityId": city.get("id"),
+        "region": city.get("region"),
         "venueName": venue.get("name"),
         "address": venue.get("address"),
         "organizer": organizer.get("name"),
@@ -180,7 +201,8 @@ class BAOnlyQueryTool(FunctionTool[AstrAgentContext]):
         "查询蔚蓝档案(Blue Archive) BAONLY 同人展活动信息。"
         "返回活动列表，包含活动名称(title)、时间(startAt/endAt/timeLabel)、"
         "地点(province/city/venueName/address)、票价(priceLabel)、"
-        "售票状态(saleFlag)、主办方(organizer)、标签(tags)等详细信息。"
+        "售票状态(saleFlag)、主办方(organizer)、标签(tags)、"
+        "运营标记(markers：已取消/已延期/地点变更)等详细信息。"
         "可用于回答用户关于蔚蓝档案ONLY/同人展活动的查询。"
     )
     parameters: dict = Field(
@@ -214,6 +236,14 @@ class BAOnlyQueryTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "description": "按标签筛选活动，例如\"ONLY\"、\"同人展\"。",
                 },
+                "marker": {
+                    "type": "string",
+                    "description": (
+                        "按运营标记筛选活动。cancelled=已取消，"
+                        "postponed=已延期，venueChanged=地点变更。"
+                    ),
+                    "enum": ["cancelled", "postponed", "venueChanged"],
+                },
                 "q": {
                     "type": "string",
                     "description": "按活动标题关键字筛选。",
@@ -221,6 +251,50 @@ class BAOnlyQueryTool(FunctionTool[AstrAgentContext]):
                 "region": {
                     "type": "string",
                     "description": "按大区筛选活动，例如\"华东\"、\"华南\"。",
+                },
+                "city_id": {
+                    "type": "string",
+                    "description": "按城市 ID 精确筛选，取值来自城市计数（facets）里的 value。",
+                },
+                "date_mode": {
+                    "type": "string",
+                    "description": (
+                        "日期筛选模式。holiday=按节假日，day=按单日（配合 date），"
+                        "range=按区间（配合 date_from/date_to）。"
+                    ),
+                    "enum": ["", "holiday", "day", "range"],
+                },
+                "holiday_name": {
+                    "type": "string",
+                    "description": "节假日名称，配合 date_mode=holiday 使用，例如\"国庆节\"。",
+                },
+                "min_price_cents": {
+                    "type": "integer",
+                    "description": "最低票价下限，单位分（例如 6000 表示 60 元）。",
+                },
+                "max_price_cents": {
+                    "type": "integer",
+                    "description": "最高票价上限，单位分（例如 15000 表示 150 元）。",
+                },
+                "highlighted_only": {
+                    "type": "boolean",
+                    "description": "只返回带高亮（含高亮标签或运营标记）的活动。",
+                },
+                "carousel_only": {
+                    "type": "boolean",
+                    "description": "只返回进入首页海报轮播的精选活动。",
+                },
+                "lat": {
+                    "type": "number",
+                    "description": "纬度，与 lng 一起传入可开启距离排序（sort=distance）。",
+                },
+                "lng": {
+                    "type": "number",
+                    "description": "经度，与 lat 一起传入可开启距离排序（sort=distance）。",
+                },
+                "max_distance_km": {
+                    "type": "number",
+                    "description": "按距离筛选的最大半径（公里），需同时传 lat/lng，取值 1~5000。",
                 },
                 "date": {
                     "type": "string",

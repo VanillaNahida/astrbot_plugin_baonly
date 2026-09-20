@@ -10,7 +10,8 @@
 - **可调每页数量**：支持 4 / 6 / 10 / 20 / 23 / 50 场每页，适配不同展示需求
 - **HTTP 代理支持**：可配置代理服务器访问目标站点，支持代理认证
 - **LLM 工具 + 命令双通道查询**：接入 BAOnly 公开 API，AI 和命令均可查询展会列表与详情
-- **城市/省份/标签/状态筛选**：API 查询支持按城市、省份、标签、活动状态（即将举行 / 进行中 / 已结束 / 全部）筛选
+- **多维度筛选**：API 查询支持按城市 / 省份 / 大区 / 标签 / 运营标记（已取消 / 已延期 / 地点变更）/ 活动状态（即将举行 / 进行中 / 已结束 / 全部）筛选，并支持按距离排序
+- **展会详情卡片图片**：`/baonly detail` 同时支持活动 ID 与关键词（标题 / 主办方 / 城市 / 场馆）检索，命中后渲染移动端详情卡片图片（时间、地点、票价、票档、嘉宾），并附上 BAOnly 活动页面链接与购票链接
 - **WebSocket 订阅推送**：长连接订阅活动变更（新增/修改/删除、公告、维护），并按各「群聊 / 私聊」会话配置主动推送
 - **WebUI 插件页管理订阅**：在插件详情页简洁管理订阅渠道
 
@@ -48,6 +49,8 @@
 | `proxy_username` | string | 空 | HTTP 代理认证用户名 |
 | `proxy_password` | string | 空 | HTTP 代理认证密码 |
 | `extra_wait_seconds` | int | 0 | 截图前额外等待的秒数 |
+| `detail_image_enabled` | bool | true | 是否将展会详情渲染成卡片图片发送；关闭后 `/baonly detail` 与 LLM 工具仅返回文本 |
+| `detail_render_mode` | string | `auto` | 详情图片渲染方式：`auto`（优先 AstrBot 文转图，失败回退 Playwright）/ `astrbot` / `playwright` |
 | `push_delay_seconds` | int | 0 | 推送基础延时（秒），每次推送实际叠加 0.5~1 秒随机抖动，降低风控风险 |
 | `ws_ping_interval` | int | 30 | WebSocket 心跳间隔（秒） |
 | `ws_reconnect_interval` | int | 30 | WebSocket 断线重连间隔（秒） |
@@ -60,7 +63,7 @@
 | `/bao` | `/bao` | 截图 BAOnly 网页活动列表，默认每页 4 场 |
 | `/baonly page` | `/baonly page 20` | 截图并指定每页数量（4/6/10/20/23/50） |
 | `/baonly query` | `/baonly query upcoming 深圳市` | 文本查询展会列表，可按状态、城市筛选 |
-| `/baonly detail` | `/baonly detail <活动ID>` | 查询单个展会详情 |
+| `/baonly detail` | `/baonly detail 广州蔚蓝档案` | 查询单个展会详情。支持活动 ID，也支持标题 / 主办方 / 城市 / 场馆等关键词检索；命中后发送「活动页面链接 + 购票链接 + 详情卡片图片」 |
 | `/baonly sub` | `/baonly sub` | 订阅当前会话，展会变更时自动推送 |
 | `/baonly unsub` | `/baonly unsub` | 取消订阅当前会话 |
 | `/baonly status` | `/baonly status` | 查看推送连接状态（连接时长、API Key 有效性、最近推送等） |
@@ -70,12 +73,13 @@
 
 ## LLM 工具
 
-插件自动注册 `baonly_query_events`（列表查询）与 `baonly_event_detail`（详情查询）两个工具供 AI 调用，无需手动触发：
+插件自动注册 `baonly_query_events`（列表查询）、`baonly_event_detail`（详情查询）与 `baonly_event_image`（详情图片发送）三个工具供 AI 调用，无需手动触发：
 
 - 近期蔚蓝档案 ONLY / 同人展活动（即将举行 / 进行中 / 已结束 / 全部）
 - 活动时间、举办城市、省份、场馆地址、票价区间
-- 指定城市 / 省份 / 标签筛选，例如「广州有哪些蔚蓝档案活动？」
+- 指定城市 / 省份 / 大区 / 标签 / 运营标记筛选，例如「广州有哪些蔚蓝档案活动？」「有哪些活动已取消？」
 - 单个展会的完整介绍、票档、嘉宾、购票链接等深入查询
+- 按活动 ID 生成展会详情卡片图片并直接发送给用户（`baonly_event_image`）
 
 ## 订阅推送与插件页
 
