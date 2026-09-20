@@ -25,7 +25,7 @@ from .web import BAOnlyWebController
 
 VALID_PAGE_SIZES = [4, 6, 10, 20, 23, 50]
 PLUGIN_NAME = "astrbot_plugin_baonly"
-PLUGIN_VERSION = "2.0.0"
+PLUGIN_VERSION = "2.1.0"
 
 
 def _get_version_safe(package: str) -> str:
