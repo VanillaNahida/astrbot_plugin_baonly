@@ -25,7 +25,7 @@ from .web import BAOnlyWebController
 
 VALID_PAGE_SIZES = [4, 6, 10, 20, 23, 50]
 PLUGIN_NAME = "astrbot_plugin_baonly"
-PLUGIN_VERSION = "2.1.0"
+PLUGIN_VERSION = "2.1.1"
 
 
 def _get_version_safe(package: str) -> str:
@@ -61,6 +61,9 @@ class BAOnlyPlugin(Star):
 
         self._image_tool = BAOnlyEventImageTool()
         self._image_tool.set_config(self.config)
+        self._image_tool.set_runtime(
+            self._astrbot_version, PLUGIN_NAME, self._plugin_version
+        )
         self.context.add_llm_tools(self._image_tool)
         logger.info("[BAOnly] 插件已初始化，LLM 工具已注册")
 
@@ -156,6 +159,9 @@ class BAOnlyPlugin(Star):
                 image_path = await render_detail_card(
                     data,
                     output_dir=output_dir,
+                    astrbot_version=self._astrbot_version,
+                    plugin_name=PLUGIN_NAME,
+                    plugin_version=self._plugin_version,
                     **render_options_from_config(self.config),
                 )
                 yield event.chain_result(build_detail_reply_chain(data, image_path))

@@ -279,13 +279,14 @@ async def set_page_size(page, size):
         logger.warning(f"[BAOnly] 未找到选项: {option_text}")
 
 
-def _inject_footer_js(
+def build_footer_text(
     playwright_ver: str,
     now_str: str,
     astrbot_ver: str = "",
     plugin_name: str = "",
     plugin_ver: str = "",
 ) -> str:
+    """生成页脚版本信息文案，供网页截图与详情卡片共用，保证两者一致。"""
     parts = [
         f"截图时间：{now_str}",
         "数据来源自 beta.baonly.cn",
@@ -296,8 +297,19 @@ def _inject_footer_js(
     if plugin_name:
         parts.append(f"{plugin_name} v{plugin_ver}")
     parts.append("作者：香草味的纳西妲喵（VanillaNahida）")
+    return " | ".join(parts)
 
-    text_content = " | ".join(parts)
+
+def _inject_footer_js(
+    playwright_ver: str,
+    now_str: str,
+    astrbot_ver: str = "",
+    plugin_name: str = "",
+    plugin_ver: str = "",
+) -> str:
+    text_content = build_footer_text(
+        playwright_ver, now_str, astrbot_ver, plugin_name, plugin_ver
+    )
     return f"""
         const footer = document.createElement('div');
         footer.style.cssText = 'text-align:center;padding:12px 0;font-size:20px;color:#000000;border-top:1px solid #eee;margin-top:20px;';

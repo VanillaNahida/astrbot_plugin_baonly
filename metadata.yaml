@@ -8,7 +8,7 @@ desc: |
   - 支持 WebSocket 长连接订阅活动变更，并按各群聊/私聊会话配置主动推送
   - 提供 WebUI 插件页简洁管理订阅渠道
 short_desc: 蔚蓝档案同人ONLY活动截图、查询与订阅推送
-version: v2.1.0
+version: v2.1.1
 author: 香草味的纳西妲喵（VanillaNahida）
 
 repo: https://github.com/VanillaNahida/astrbot_plugin_baonly

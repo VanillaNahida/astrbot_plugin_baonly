@@ -483,6 +483,11 @@ h1 { font-size: 22px; line-height: 1.35; font-weight: 700; margin-bottom: 10px; 
   font-size: 13px; color: #333333; line-height: 1.75;
   white-space: pre-wrap; word-break: break-word;
 }
+.footer {
+  text-align: center; padding: 12px 0 0; margin-top: 20px;
+  border-top: 1px solid #EEEEEE;
+  font-size: 11px; color: #999999; line-height: 1.6;
+}
 .ticket {
   display: flex; justify-content: space-between; align-items: center;
   border: 1px solid #E0E0E0; border-radius: 12px; padding: 12px 16px; margin-bottom: 10px;
@@ -511,7 +516,37 @@ h1 { font-size: 22px; line-height: 1.35; font-weight: 700; margin-bottom: 10px; 
 """.replace("__WIDTH__", str(CARD_WIDTH))
 
 
-def build_detail_card_html(detail: dict) -> str:
+def _footer_html(
+    astrbot_version: str = "",
+    plugin_name: str = "",
+    plugin_version: str = "",
+) -> str:
+    """详情卡片页脚：复用网页截图的版本信息文案，保证两类图片一致。"""
+    from importlib.metadata import version as _pkg_version
+
+    from .baonly_screenshot import build_footer_text
+
+    try:
+        playwright_ver = _pkg_version("playwright")
+    except Exception:
+        playwright_ver = ""
+
+    text = build_footer_text(
+        playwright_ver,
+        datetime.now().strftime("%Y/%m/%d %H:%M"),
+        astrbot_version,
+        plugin_name,
+        plugin_version,
+    )
+    return '<div class="footer">{}</div>'.format(_esc(text))
+
+
+def build_detail_card_html(
+    detail: dict,
+    astrbot_version: str = "",
+    plugin_name: str = "",
+    plugin_version: str = "",
+) -> str:
     """把活动详情（PublicEventDetailDto 原始结构）渲染为完整 HTML 字符串。"""
     detail = detail or {}
     info_items = detail.get("infoItems") or []
@@ -542,6 +577,7 @@ def build_detail_card_html(detail: dict) -> str:
             _kv_section("主办信息", "badge-check", organizer_items),
             _tickets_section(detail),
             _guests_section(detail),
+            _footer_html(astrbot_version, plugin_name, plugin_version),
         ]
     )
 
@@ -715,6 +751,9 @@ async def render_detail_card(
     mode: str = "auto",
     output_dir: str = "",
     user_agent: str = "",
+    astrbot_version: str = "",
+    plugin_name: str = "",
+    plugin_version: str = "",
     proxy_host: str = "",
     proxy_port: str = "",
     proxy_username: str = "",
@@ -724,7 +763,9 @@ async def render_detail_card(
 
     mode: ``auto`` | ``astrbot`` | ``playwright``
     """
-    html_text = build_detail_card_html(detail)
+    html_text = build_detail_card_html(
+        detail, astrbot_version, plugin_name, plugin_version
+    )
     output_dir = output_dir or os.path.join(
         os.path.abspath("data"), "temp", PLUGIN_NAME
     )

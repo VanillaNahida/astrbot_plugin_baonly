@@ -45,8 +45,20 @@ class BAOnlyEventImageTool(FunctionTool[AstrAgentContext]):
     # 插件配置，由 main.py 在注册前注入
     _config: dict = Field(default_factory=dict, repr=False, exclude=True)
 
+    # 运行时版本信息，用于页脚展示，由 main.py 注入
+    _runtime: dict = Field(default_factory=dict, repr=False, exclude=True)
+
     def set_config(self, config: dict):
         self._config = config
+
+    def set_runtime(
+        self, astrbot_version: str = "", plugin_name: str = "", plugin_version: str = ""
+    ):
+        self._runtime = {
+            "astrbot_version": astrbot_version,
+            "plugin_name": plugin_name,
+            "plugin_version": plugin_version,
+        }
 
     async def call(
         self, context: ContextWrapper[AstrAgentContext], **kwargs
@@ -70,9 +82,15 @@ class BAOnlyEventImageTool(FunctionTool[AstrAgentContext]):
             return f"未找到活动 {event_id}：{data.get('error', '活动不存在或已下架')}"
 
         output_dir = os.path.abspath(os.path.join("data", "temp", PLUGIN_NAME))
+        runtime = self._runtime or {}
         try:
             image_path = await render_detail_card(
-                data, output_dir=output_dir, **render_options_from_config(config)
+                data,
+                output_dir=output_dir,
+                astrbot_version=runtime.get("astrbot_version", ""),
+                plugin_name=runtime.get("plugin_name", ""),
+                plugin_version=runtime.get("plugin_version", ""),
+                **render_options_from_config(config),
             )
         except Exception as e:
             logger.error(f"[BAOnly] 生成展会详情图片失败: {e}", exc_info=True)
