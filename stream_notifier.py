@@ -147,7 +147,7 @@ def _format_event_text(
     title = new.get("title") or old.get("title") or "（无标题）"
     header = f"[BAOnly活动{action}] {title}"
     if note:
-        header += f" 备注：{note}"
+        header += f"\n备注：{note}"
     lines = [header]
 
     if action == "更新":
