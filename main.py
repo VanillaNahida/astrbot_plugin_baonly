@@ -17,6 +17,7 @@ from .detail_card import (
     render_detail_card,
     render_options_from_config,
 )
+from .help_card import build_help_text, render_help_card
 from .subscriptions import SubscriptionStore, _normalize_umo
 from .stream_notifier import StreamNotifier, _marker_labels
 from .group_cache import GroupInfoCache, extract_channel_id
@@ -259,6 +260,27 @@ class BAOnlyPlugin(Star):
                 lines.append(f"{i}.私聊：{nickname}({channel_id})")
         lines.append("可使用 baonly sub/unsub 维护订阅渠道，也可在 WebUI 插件页管理。")
         yield event.plain_result("\n".join(lines))
+
+    @filter.permission_type(filter.PermissionType.MEMBER)
+    @baonly.command("help")
+    async def baonly_help(self, event: AstrMessageEvent):
+        """查看插件使用方法（渲染成图片发送）。用法：baonly help"""
+        output_dir = os.path.abspath(os.path.join("data", "temp", PLUGIN_NAME))
+        try:
+            image_path = await render_help_card(
+                output_dir=output_dir,
+                astrbot_version=self._astrbot_version,
+                plugin_name=PLUGIN_NAME,
+                plugin_version=self._plugin_version,
+                **render_options_from_config(self.config),
+            )
+            yield event.image_result(image_path)
+            return
+        except Exception as e:
+            logger.error(
+                f"[BAOnly] 生成帮助图片失败，回退文本输出: {e}", exc_info=True
+            )
+        yield event.plain_result(build_help_text())
 
     async def _do_screenshot(self, event: AstrMessageEvent, page_size: int):
         user_agent = self.config.get("user_agent", DEFAULT_USER_AGENT)

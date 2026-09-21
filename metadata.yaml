@@ -5,6 +5,7 @@ desc: |
   截图与订阅推送的AstrBot插件。已全面迁移至 beta.baonly.cn：
   - Playwright 无头浏览器截图 BAOnly 活动列表页（支持 4/6/10/20/23/50 场/页）
   - LLM 工具与命令组均可查询展会列表与详情
+  - /baonly help 把使用方法渲染成命令表格图片发送
   - 支持 WebSocket 长连接订阅活动变更，并按各群聊/私聊会话配置主动推送
   - 提供 WebUI 插件页简洁管理订阅渠道
 short_desc: 蔚蓝档案同人ONLY活动截图、查询与订阅推送

@@ -140,15 +140,14 @@ def _format_event_text(
 
     更新：Git Diff 风格，逐字段输出 ``--- 旧值`` 与 ``+++ 新值``；
     新增 / 移除：按普通字段列表输出（不使用 Git Diff 记号）。
+
+    尾部依次为活动链接（有则输出）、活动 ID 与 WS 备注。
     """
     old = old or {}
     new = new or {}
     source = old if action == "移除" else new
     title = new.get("title") or old.get("title") or "（无标题）"
-    header = f"[BAOnly活动{action}] {title}"
-    if note:
-        header += f"\n备注：{note}"
-    lines = [header]
+    lines = [f"[BAOnly活动{action}] {title}"]
 
     if action == "更新":
         for label, old_value, new_value in _diff_rows(old, new):
@@ -164,7 +163,12 @@ def _format_event_text(
                 lines.append(f"{label}：{value}")
 
     link = new.get("pcTicketUrl") or old.get("pcTicketUrl") or ""
-    lines.append(f"详情：{link}" if link else f"活动ID：{event_id}")
+    if link:
+        lines.append(f"详情：{link}")
+    if event_id:
+        lines.append(f"活动ID：{event_id}")
+    if note:
+        lines.append(f"备注：{note}")
     return "\n".join(lines)
 
 

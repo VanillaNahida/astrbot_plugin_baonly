@@ -555,6 +555,23 @@ def _footer_html(
     return '<div class="footer">{}</div>'.format(_esc(text))
 
 
+def build_card_document(body_html: str, extra_css: str = "") -> str:
+    """把卡片主体包装成完整 HTML 文档（统一字体、视口宽度与基础样式）。
+
+    详情卡片与帮助卡片共用，``extra_css`` 用于追加卡片各自的样式。
+    """
+    return (
+        "<!DOCTYPE html>"
+        '<html lang="zh-CN"><head><meta charset="utf-8">'
+        # t2i 端点会读取这里的 width 作为视口宽度，写死卡片宽度可避免两侧留白
+        f'<meta name="viewport" content="width={CARD_WIDTH}, initial-scale=1">'
+        f"{_FONT_LINKS}"
+        f"<style>{_CSS}{extra_css}</style></head><body>"
+        f'<div class="card">{body_html}</div>'
+        "</body></html>"
+    )
+
+
 def build_detail_card_html(
     detail: dict,
     astrbot_version: str = "",
@@ -595,16 +612,7 @@ def build_detail_card_html(
         ]
     )
 
-    return (
-        "<!DOCTYPE html>"
-        '<html lang="zh-CN"><head><meta charset="utf-8">'
-        # t2i 端点会读取这里的 width 作为视口宽度，写死卡片宽度可避免两侧留白
-        f'<meta name="viewport" content="width={CARD_WIDTH}, initial-scale=1">'
-        f"{_FONT_LINKS}"
-        f"<style>{_CSS}</style></head><body>"
-        f'<div class="card">{_hero(detail)}<div class="body">{body}</div></div>'
-        "</body></html>"
-    )
+    return build_card_document(f'{_hero(detail)}<div class="body">{body}</div>')
 
 
 def build_detail_reply_chain(detail: dict, image_path: str) -> list:
@@ -751,10 +759,28 @@ async def _render_with_playwright(
             await page.set_content(
                 html_text, wait_until="domcontentloaded", timeout=15000
             )
-            # 等待网页字体（Blueaka）就绪，否则会截到回退字体
+            # 等待网页字体（Blueaka）就绪，否则会截到回退字体。
+            # 注意：字体样式表是外链 <link>，而 document.fonts.ready 在样式表到位前
+            # 就会立即 resolve（此时页面还没有任何待加载字体），因此必须先等样式表
+            # 加载完成，再按卡片实际用到的字重显式触发字体加载。
             try:
                 await asyncio.wait_for(
-                    page.evaluate("() => document.fonts.ready"), timeout=10
+                    page.evaluate("""
+                        async () => {
+                            const links = [...document.querySelectorAll('link[rel=stylesheet]')];
+                            await Promise.all(links.map(l => l.sheet ? null : new Promise(r => {
+                                l.addEventListener('load', r, {once: true});
+                                l.addEventListener('error', r, {once: true});
+                            })));
+                            await Promise.all([
+                                document.fonts.load('400 13px Blueaka'),
+                                document.fonts.load('700 13px Blueaka'),
+                                document.fonts.load('700 22px Blueaka'),
+                            ]);
+                            await document.fonts.ready;
+                        }
+                    """),
+                    timeout=10,
                 )
             except Exception:
                 pass
@@ -792,34 +818,29 @@ async def _render_with_retry(label: str, render, retry: int) -> str:
     raise last_error
 
 
-async def render_detail_card(
-    detail: dict,
+async def render_html_card(
+    html_text: str,
+    output_dir: str = "",
+    filename_prefix: str = "baonly_card_",
     mode: str = "auto",
     retry: int = DEFAULT_RENDER_RETRY,
-    output_dir: str = "",
     user_agent: str = "",
-    astrbot_version: str = "",
-    plugin_name: str = "",
-    plugin_version: str = "",
     proxy_host: str = "",
     proxy_port: str = "",
     proxy_username: str = "",
     proxy_password: str = "",
 ) -> str:
-    """渲染展会详情卡片，返回本地图片路径。
+    """通用 HTML → 图片渲染，返回本地图片路径（详情卡片 / 帮助卡片共用）。
 
     mode: ``auto`` | ``astrbot`` | ``playwright``
     retry: 每种渲染方式的失败重试次数，``auto`` 模式下重试全部失败后回退到另一种方式
     """
-    html_text = build_detail_card_html(
-        detail, astrbot_version, plugin_name, plugin_version
-    )
     output_dir = output_dir or os.path.join(
         os.path.abspath("data"), "temp", PLUGIN_NAME
     )
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(
-        output_dir, f"baonly_detail_{int(time.time() * 1000)}.png"
+        output_dir, f"{filename_prefix}{int(time.time() * 1000)}.png"
     )
 
     async def _via_playwright() -> str:
@@ -860,3 +881,35 @@ async def render_detail_card(
             f"自动回退本地 Playwright: {e}"
         )
         return await _render_with_retry("Playwright 渲染", _via_playwright, retry)
+
+
+async def render_detail_card(
+    detail: dict,
+    mode: str = "auto",
+    retry: int = DEFAULT_RENDER_RETRY,
+    output_dir: str = "",
+    user_agent: str = "",
+    astrbot_version: str = "",
+    plugin_name: str = "",
+    plugin_version: str = "",
+    proxy_host: str = "",
+    proxy_port: str = "",
+    proxy_username: str = "",
+    proxy_password: str = "",
+) -> str:
+    """渲染展会详情卡片，返回本地图片路径。"""
+    html_text = build_detail_card_html(
+        detail, astrbot_version, plugin_name, plugin_version
+    )
+    return await render_html_card(
+        html_text,
+        output_dir=output_dir,
+        filename_prefix="baonly_detail_",
+        mode=mode,
+        retry=retry,
+        user_agent=user_agent,
+        proxy_host=proxy_host,
+        proxy_port=proxy_port,
+        proxy_username=proxy_username,
+        proxy_password=proxy_password,
+    )
