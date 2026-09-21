@@ -72,6 +72,7 @@ class BAOnlyPlugin(Star):
         self._notifier = StreamNotifier(context, self._store, self.config, user_agent)
         self._notifier.start()
 
+    @filter.permission_type(filter.PermissionType.MEMBER)
     @filter.command("bao", alias="BAO")
     async def baonly_default(self, event: AstrMessageEvent):
         """截图 BAOnly 网页活动列表，默认每页 4 场"""
@@ -83,6 +84,7 @@ class BAOnlyPlugin(Star):
     async def baonly(self):
         pass
 
+    @filter.permission_type(filter.PermissionType.MEMBER)
     @baonly.command("page")
     async def baonly_page(self, event: AstrMessageEvent, page_size: int = 4):
         """截图 BAOnly 网页活动列表，可指定每页显示数量(4/6/10/20/23/50) 如：baonly page 4"""
@@ -96,6 +98,7 @@ class BAOnlyPlugin(Star):
         async for result in self._do_screenshot(event, page_size):
             yield result
 
+    @filter.permission_type(filter.PermissionType.MEMBER)
     @baonly.command("query")
     async def baonly_query(self, event: AstrMessageEvent, status: str = "upcoming", city: str = ""):
         """查询 BAOnly 展会列表。用法：baonly query [status] [city]
@@ -132,6 +135,7 @@ class BAOnlyPlugin(Star):
             lines.append("\n".join(block))
         yield event.plain_result("\n".join(lines))
 
+    @filter.permission_type(filter.PermissionType.MEMBER)
     @baonly.command("detail")
     async def baonly_detail(self, event: AstrMessageEvent, keyword: GreedyStr):
         """查询单个 BAOnly 展会详情。支持活动ID，也支持标题/主办方/城市/场馆等关键词检索。
@@ -195,6 +199,7 @@ class BAOnlyPlugin(Star):
             lines.append(f"  购票: {detail['pcTicketUrl']}")
         yield event.plain_result("\n".join(lines))
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @baonly.command("sub", alias="subscribe")
     async def baonly_sub(self, event: AstrMessageEvent):
         """订阅当前会话，活动变更时自动推送。用法：baonly sub"""
@@ -210,6 +215,7 @@ class BAOnlyPlugin(Star):
         else:
             yield event.plain_result("当前会话已在订阅列表中，无需重复订阅。")
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @baonly.command("unsub", alias="unsubscribe")
     async def baonly_unsub(self, event: AstrMessageEvent):
         """取消订阅当前会话。用法：baonly unsub"""
@@ -223,12 +229,14 @@ class BAOnlyPlugin(Star):
             "已取消订阅当前会话。" if removed else "当前会话未在订阅列表中。"
         )
 
+    @filter.permission_type(filter.PermissionType.MEMBER)
     @baonly.command("status")
     async def baonly_status(self, event: AstrMessageEvent):
         """查看订阅推送连接状态。用法：baonly status"""
         lines = self._notifier.describe_status()
         yield event.plain_result("\n".join(lines))
 
+    @filter.permission_type(filter.PermissionType.MEMBER)
     @baonly.command("list")
     async def baonly_list(self, event: AstrMessageEvent):
         """查看当前全部订阅渠道。用法：baonly list"""

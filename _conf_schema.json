@@ -58,8 +58,20 @@
       "AstrBot 文转图",
       "Playwright 本地渲染"
     ],
-    "hint": "auto：优先使用 AstrBot 文转图，失败时自动回退本地 Playwright；astrbot：仅用 AstrBot 文转图（需能访问 t2i 端点）；playwright：仅用本地 Playwright（需已安装浏览器内核）",
+    "hint": "auto：优先使用 AstrBot 文转图，重试全部失败后自动回退本地 Playwright；astrbot：仅用 AstrBot 文转图（需能访问 t2i 端点）；playwright：仅用本地 Playwright（需已安装浏览器内核）",
     "default": "auto"
+  },
+  "detail_render_retry": {
+    "description": "渲染失败重试次数",
+    "type": "int",
+    "hint": "每种渲染方式各自的重试次数，默认 3。auto 模式下 AstrBot 文转图重试全部失败后会自动回退本地 Playwright",
+    "default": 3
+  },
+  "disable_group_push": {
+    "description": "关闭群发",
+    "type": "bool",
+    "hint": "仅供测试使用，正常情况下请不要开启。开启后活动变更不再推送到群聊，只推送到私聊订阅，并输出 INFO 日志",
+    "default": false
   },
   "push_delay_seconds": {
     "description": "推送基础延时（秒）",

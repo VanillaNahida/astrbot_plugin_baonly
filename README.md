@@ -21,7 +21,7 @@
 
 截图流程通过 Playwright 无头浏览器完成：先访问活动列表页并注入反调试脚本，关闭公告弹窗与新手引导，按需切换每页显示数量，随后滚动页面触发懒加载并等待所有图片解码完成，最后注入页脚水印后整页截图并回传。
 
-订阅推送：插件启动时建立 `wss://beta.baonly.cn/api/public/stream` 长连接，收到活动变更指纹后用 REST 接口补全内容，再按订阅清单中每个渠道（`unified_msg_origin`）主动推送；断线后自动重连，并用 `updatedSince` 增量对齐补漏。
+订阅推送：插件启动时建立 `wss://beta.baonly.cn/api/public/stream` 长连接，推送消息自带 `eventId`（合并消息为 `eventIds` 数组）与可选的 `note` 备注；插件按 ID 拉取 `GET /api/public/events/{eventId}`，只对比这些活动并推送变更（仅推送 WS 下发的活动）。断线后自动重连，重连时做一次全量对齐，只刷新本地缓存基线、不推送。
 
 > [!TIP]
 > 内置 API 需要鉴权才能调用。若需获取 Token，请加群并联系管理员获取。
@@ -50,7 +50,9 @@
 | `proxy_password` | string | 空 | HTTP 代理认证密码 |
 | `extra_wait_seconds` | int | 0 | 截图前额外等待的秒数 |
 | `detail_image_enabled` | bool | true | 是否将展会详情渲染成卡片图片发送；关闭后 `/baonly detail` 与 LLM 工具仅返回文本 |
-| `detail_render_mode` | string | `auto` | 详情图片渲染方式：`auto`（优先 AstrBot 文转图，失败回退 Playwright）/ `astrbot` / `playwright` |
+| `detail_render_mode` | string | `auto` | 详情图片渲染方式：`auto`（优先 AstrBot 文转图，重试全部失败后回退 Playwright）/ `astrbot` / `playwright` |
+| `detail_render_retry` | int | 3 | 每种渲染方式各自的重试次数；`auto` 模式下 AstrBot 文转图重试全部失败后自动回退 Playwright |
+| `disable_group_push` | bool | false | 关闭群发（**仅供测试使用，正常情况下请不要开启**）：开启后活动变更不再推送到群聊，只推送到私聊订阅，并输出 INFO 日志 |
 | `push_delay_seconds` | int | 0 | 推送基础延时（秒），每次推送实际叠加 0.5~1 秒随机抖动，降低风控风险 |
 | `ws_ping_interval` | int | 30 | WebSocket 心跳间隔（秒） |
 | `ws_reconnect_interval` | int | 30 | WebSocket 断线重连间隔（秒） |
@@ -64,12 +66,12 @@
 | `/baonly page` | `/baonly page 20` | 截图并指定每页数量（4/6/10/20/23/50） |
 | `/baonly query` | `/baonly query upcoming 深圳市` | 文本查询展会列表，可按状态、城市筛选 |
 | `/baonly detail` | `/baonly detail 广州蔚蓝档案` | 查询单个展会详情。支持活动 ID，也支持标题 / 主办方 / 城市 / 场馆等关键词检索；命中后发送「活动页面链接 + 购票链接 + 详情卡片图片」 |
-| `/baonly sub` | `/baonly sub` | 订阅当前会话，展会变更时自动推送 |
-| `/baonly unsub` | `/baonly unsub` | 取消订阅当前会话 |
+| `/baonly sub` | `/baonly sub` | 订阅当前会话，展会变更时自动推送（需管理员权限） |
+| `/baonly unsub` | `/baonly unsub` | 取消订阅当前会话（需管理员权限） |
 | `/baonly status` | `/baonly status` | 查看推送连接状态（连接时长、API Key 有效性、最近推送等） |
 | `/baonly list` | `/baonly list` | 查看全部订阅渠道（群聊显示「群名+群号」，私聊显示「昵称+QQ号」） |
 
-命令在群聊与私聊中均可使用。
+命令在群聊与私聊中均可使用。仅 `/baonly sub`、`/baonly unsub` 需要管理员权限，其余命令所有人可用（也可在 AstrBot WebUI 的「指令管理」中按需调整）。
 
 ## LLM 工具
 
@@ -84,6 +86,19 @@
 ## 订阅推送与插件页
 
 - 通过 `/baonly sub` 让机器人把当前「群聊或私聊」会话加入订阅列表，之后 beta 站发生活动变更时，机器人会主动推送变更内容到该会话。
+- 推送文本：仅「更新」使用 Git Diff 记号，逐字段列出 `--- 旧值` / `+++ 新值`；新增与下架按普通字段列表输出（不加记号）。WS 消息带 `note` 时会在标题行追加「 备注：xxx 」：
+
+```text
+[BAOnly活动更新] 广州蔚蓝档案 ONLY 备注：运营放行，时间已更正
+--- 时间：2026.09.30 - 2026.10.01
++++ 时间：2026.10.01 - 2026.10.02
+--- 标记：（无）
++++ 标记：已取消
+详情：https://beta.baonly.cn/event/123
+```
+
+- 只有 WS 下发的活动才会推送；断线重连时的全量对齐只刷新本地缓存基线，不会产生推送。
+
 - 也可以在 AstrBot WebUI 的插件详情页打开「订阅管理」Page，直观地查看、新增、移除订阅渠道。
 - 订阅显示名会从号码自动获取：群聊显示「群昵称 + 群号」，私聊显示「用户昵称 + QQ号」；Page 支持一键列出当前群列表，点击即可订阅。
 

@@ -41,9 +41,51 @@ _MARKER_LABELS = {
     "venueChanged": "地点变更",
 }
 
+# Diff 展示字段：展示标签 -> 参与对比的摘要字段（多字段会拼成一行，如 省·市）
+_DIFF_FIELDS = (
+    ("标题", ("title",)),
+    ("时间", ("timeLabel",)),
+    ("地点", ("province", "city")),
+    ("场馆", ("venueName",)),
+    ("票价", ("priceLabel",)),
+    ("售票", ("saleFlag",)),
+    ("标记", ("markers",)),
+    ("精选", ("featured",)),
+)
+
+
+# WS 消息类型 -> 推送动作
+_ACTION_BY_TYPE = {
+    "event.created": "新增",
+    "event.updated": "更新",
+    "event.removed": "移除",
+}
+
 
 def _now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _summary_value(summary: dict, keys: tuple) -> str:
+    """把摘要里的一个或多个字段拼成展示用的值，空值返回空串。"""
+    if keys == ("featured",):
+        return "是" if summary.get("featured") else ""
+    parts = [str(summary.get(k) or "").strip() for k in keys]
+    return "·".join(p for p in parts if p)
+
+
+def _diff_rows(old: dict, new: dict) -> list:
+    """对比两份摘要，返回发生变化的字段：(标签, 旧值, 新值)。"""
+    rows = []
+    for label, keys in _DIFF_FIELDS:
+        # 旧缓存里缺字段时不参与对比，避免插件升级后误报变更
+        if any(k not in old for k in keys):
+            continue
+        old_value = _summary_value(old, keys)
+        new_value = _summary_value(new, keys)
+        if old_value != new_value:
+            rows.append((label, old_value, new_value))
+    return rows
 
 
 def _format_duration(seconds: float) -> str:
@@ -91,40 +133,38 @@ def _has_tracked_change(old_s: dict, new_s: dict) -> bool:
     return False
 
 
-def _format_event_text(event_id: str, action: str, info: dict) -> str:
-    """把一次变更组装成推送文本。action: 新增 / 移除 / 更新。"""
-    title = info.get("title") or "（无标题）"
-    lines = [f"[BAOnly活动{action}] {title}"]
+def _format_event_text(
+    event_id: str, action: str, old: dict = None, new: dict = None, note: str = ""
+) -> str:
+    """组装推送文本。
 
-    markers = _marker_labels(info.get("markers"))
-    if markers:
-        lines.append(f"标记：{markers}")
+    更新：Git Diff 风格，逐字段输出 ``--- 旧值`` 与 ``+++ 新值``；
+    新增 / 移除：按普通字段列表输出（不使用 Git Diff 记号）。
+    """
+    old = old or {}
+    new = new or {}
+    source = old if action == "移除" else new
+    title = new.get("title") or old.get("title") or "（无标题）"
+    header = f"[BAOnly活动{action}] {title}"
+    if note:
+        header += f" 备注：{note}"
+    lines = [header]
 
-    time_label = info.get("timeLabel") or ""
-    if time_label:
-        lines.append(f"时间：{time_label}")
-
-    province = info.get("province") or ""
-    city = info.get("city") or ""
-    if province:
-        lines.append(f"地点：{province}" + (f"·{city}" if city else ""))
-    elif city:
-        lines.append(f"地点：{city}")
-
-    venue = info.get("venueName") or ""
-    if venue:
-        lines.append(f"场馆：{venue}")
-
-    price = info.get("priceLabel") or ""
-    if price:
-        lines.append(f"票价：{price}")
-
-    link = info.get("pcTicketUrl") or ""
-    if link:
-        lines.append(f"详情：{link}")
+    if action == "更新":
+        for label, old_value, new_value in _diff_rows(old, new):
+            lines.append(f"--- {label}：{old_value or '（无）'}")
+            lines.append(f"+++ {label}：{new_value or '（无）'}")
     else:
-        lines.append(f"活动ID：{event_id}")
+        for label, keys in _DIFF_FIELDS:
+            # 标题已在首行，不再重复
+            if label == "标题":
+                continue
+            value = _summary_value(source, keys)
+            if value:
+                lines.append(f"{label}：{value}")
 
+    link = new.get("pcTicketUrl") or old.get("pcTicketUrl") or ""
+    lines.append(f"详情：{link}" if link else f"活动ID：{event_id}")
     return "\n".join(lines)
 
 
@@ -165,7 +205,9 @@ class ActivityCache:
 class StreamNotifier:
     """WebSocket 长连接订阅 beta.baonly.cn 变更推送。
 
-    收到活动变更指纹后拉取最新活动列表，与本地缓存对比，推送“新增 / 移除 / 更新”。
+    推送消息自带 eventId（合并消息为 eventIds 数组）与 note 备注，因此只按 ID 拉取
+    ``GET /api/public/events/{eventId}`` 并与本地缓存对比，推送「新增 / 移除 / 更新」；
+    只有 WS 下发的活动才会推送，重连（ready）时的全量对齐只刷新缓存基线、不推送。
     断线、维护模式、API Key 停用等情况会记录状态，可用 /baonly status 查看。
     """
 
@@ -176,6 +218,8 @@ class StreamNotifier:
         self._user_agent = user_agent
         # 推送基础延时(秒)；每次推送额外叠加 0.5~1s 随机抖动，降低风控风险
         self._push_delay_base = float(config.get("push_delay_seconds", 0))
+        # 测试开关：开启后活动变更只推私聊，不推群聊
+        self._disable_group_push = bool(config.get("disable_group_push", False))
         self._cache = ActivityCache(_ACTIVITIES_CACHE_FILE)
 
         self._task = None
@@ -183,6 +227,10 @@ class StreamNotifier:
         self._stopping = False
         self._sync_event = asyncio.Event()
         self._sync_lock = asyncio.Lock()
+        # 待对比的活动：event_id -> {"action": WS 给出的动作, "note": WS 备注}
+        self._pending: dict[str, dict] = {}
+        # 为 True 表示需要一次静默的缓存对齐（重连 / 缺少基线）
+        self._pending_full = False
 
         # 连接状态（供 /baonly status 读取）
         self._connected = False
@@ -211,7 +259,21 @@ class StreamNotifier:
         if self._sync_task and not self._sync_task.done():
             self._sync_task.cancel()
 
-    def _schedule_sync(self):
+    def _schedule_sync(self, event_ids=None, action: str = "", note: str = ""):
+        """安排一次对比。
+
+        带 event_ids（WS 下发）时只对比这些活动，并记录 WS 给出的动作与备注；
+        否则只做一次静默的缓存对齐，不推送。
+        """
+        ids = {str(i) for i in (event_ids or []) if i}
+        if not ids:
+            self._pending_full = True
+            self._sync_event.set()
+            return
+        for eid in ids:
+            meta = self._pending.setdefault(eid, {"action": "", "note": ""})
+            meta["action"] = action or meta["action"]
+            meta["note"] = note or meta["note"]
         self._sync_event.set()
 
     # ---------- 状态 ----------
@@ -396,15 +458,16 @@ class StreamNotifier:
         if not isinstance(msg, dict):
             return
 
-        mtype = msg.get("type") or ""
+        mtype = str(msg.get("type") or "")
         event_id = msg.get("eventId") or msg.get("event_id")
+        event_ids = msg.get("eventIds") or msg.get("event_ids")
 
         if mtype == "ready":
             scopes = msg.get("scopes", [])
             self._scopes = scopes if isinstance(scopes, list) else []
             self._api_key_valid = True
             logger.info(f"[BAOnly] 流已就绪，权限: {self._scopes}")
-            # 重连后与缓存对齐，补齐断线期间漏掉的变更
+            # 重连后与缓存对齐（只刷新缓存，不推送）
             self._schedule_sync()
             return
 
@@ -440,14 +503,31 @@ class StreamNotifier:
                 )
             return
 
-        is_event_change = bool(event_id) or str(mtype).startswith("event")
-        if not is_event_change:
-            # 非活动类推送（公告/维护等），只记录
-            logger.info(f"[BAOnly] 收到推送: {text[:200]}")
+        # 活动变更：只对比 WS 下发的这些活动，按消息类型确定动作
+        ids = []
+        if isinstance(event_ids, (list, tuple)):
+            ids = [str(i) for i in event_ids if i]
+        elif event_id:
+            ids = [str(event_id)]
+
+        if ids:
+            action = _ACTION_BY_TYPE.get(mtype, "")
+            note = str(msg.get("note") or "").strip()
+            logger.info(
+                f"[BAOnly] 收到活动变更推送（{mtype or 'event'}，{len(ids)} 场"
+                f"{'，备注：' + note if note else ''}）: {text[:200]}"
+            )
+            self._schedule_sync(ids, action, note)
             return
 
-        # 活动变更：触发一次列表对比（多条短时间变更会合并）
-        self._schedule_sync()
+        if mtype.startswith("event"):
+            # 没带活动 ID 的变更消息：只对齐缓存，不推送
+            logger.info(f"[BAOnly] 推送未含活动 ID，仅对齐缓存: {text[:200]}")
+            self._schedule_sync()
+            return
+
+        # 非活动类推送（公告/维护等），只记录
+        logger.info(f"[BAOnly] 收到推送: {text[:200]}")
 
     # ---------- 对比与推送 ----------
 
@@ -457,78 +537,117 @@ class StreamNotifier:
             if self._stopping:
                 break
             self._sync_event.clear()
+            full = self._pending_full
+            pending = self._pending
+            self._pending_full = False
+            self._pending = {}
+            if not full and not pending:
+                continue
             try:
-                await self._sync_and_push()
+                await self._sync_once(full, pending)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.warning(f"[BAOnly] 活动对比推送失败: {e}")
 
-    async def _sync_and_push(self):
+    async def _sync_once(self, full: bool, pending: dict):
         async with self._sync_lock:
-            token = self._config.get("token", "")
-            try:
-                new_events = await self._fetch_all_events(token)
-            except Exception as e:
-                logger.warning(f"[BAOnly] 拉取活动列表失败，跳过本次对比: {e}")
-                return
-            if not new_events:
-                logger.warning("[BAOnly] 活动列表为空，跳过本次对比")
-                return
-
-            new = {eid: _summarize(ev) for eid, ev in new_events.items()}
             old = await self._cache.load()
+            if full or old is None:
+                # 重连对齐 / 首次运行：静默刷新缓存，不推送
+                old = await self._align_all(old)
+                if not pending:
+                    return
+            await self._sync_events(pending, old)
 
-            if old is None:
-                # 首次运行 / 缓存缺失：只建立基线，不推送
-                await self._cache.save(new)
-                logger.info(f"[BAOnly] 已建立活动基线（{len(new)} 场），本次不推送")
-                return
+    async def _align_all(self, old: dict | None) -> dict:
+        """全量拉取列表刷新缓存基线。
 
-            added_ids = [eid for eid in new if eid not in old]
-            removed_ids = [eid for eid in old if eid not in new]
-            updated_ids = [
-                eid
-                for eid in new
-                if eid in old and _has_tracked_change(old[eid], new[eid])
-            ]
+        推送只针对 WS 下发的活动，因此对齐结果只写入缓存、不产生推送。
+        """
+        token = self._config.get("token", "")
+        try:
+            new_events = await self._fetch_all_events(token)
+        except Exception as e:
+            logger.warning(f"[BAOnly] 拉取活动列表失败，跳过本次对齐: {e}")
+            return old or {}
+        if not new_events:
+            logger.warning("[BAOnly] 活动列表为空，跳过本次对齐")
+            return old or {}
 
-            if not (added_ids or removed_ids or updated_ids):
-                logger.info("[BAOnly] 活动无变化，跳过推送")
-                return
+        new = {eid: _summarize(ev) for eid, ev in new_events.items()}
+        await self._cache.save(new)
 
-            subs = await self._store.list()
-            if not subs:
-                logger.info("[BAOnly] 无订阅渠道，仅更新活动缓存")
-                await self._cache.save(new)
-                return
+        if old is None:
+            logger.info(f"[BAOnly] 已建立活动基线（{len(new)} 场）")
+            return new
 
-            # 组装推送内容（新增/更新尽量补全详情）
-            messages: list[tuple[str, str]] = []
-            for eid in added_ids:
-                detail = await self._fetch_detail_safe(eid)
-                if detail:
-                    new[eid] = _summarize(detail)
-                    messages.append(("新增", _format_event_text(eid, "新增", detail)))
-                else:
-                    messages.append(("新增", _format_event_text(eid, "新增", new[eid])))
-            for eid in removed_ids:
-                messages.append(("移除", _format_event_text(eid, "移除", old[eid])))
-            for eid in updated_ids:
-                detail = await self._fetch_detail_safe(eid)
-                if detail:
-                    new[eid] = _summarize(detail)
-                    messages.append(("更新", _format_event_text(eid, "更新", detail)))
-                else:
-                    messages.append(("更新", _format_event_text(eid, "更新", new[eid])))
+        changed = sum(
+            1
+            for eid, summary in new.items()
+            if eid not in old or _has_tracked_change(old[eid], summary)
+        ) + sum(1 for eid in old if eid not in new)
+        logger.info(
+            f"[BAOnly] 活动缓存已对齐（{len(new)} 场，其中 {changed} 场与缓存不同），"
+            f"本次不推送（仅推送 WS 下发的活动变更）"
+        )
+        return new
 
-            await self._cache.save(new)
+    async def _sync_events(self, pending: dict, old: dict):
+        """增量对比：只处理 WS 下发的活动，按 ID 拉取详情并与缓存比对。"""
+        new = dict(old)
+        messages: list[tuple[str, str]] = []
+        skipped = 0
+        for eid, meta in sorted(pending.items()):
+            action = str(meta.get("action") or "")
+            note = str(meta.get("note") or "")
 
-            for label, text_content in messages:
-                logger.info(
-                    f"[BAOnly] 推送变更[{label}]，共 {len(subs)} 个订阅渠道"
+            status, detail = await self._fetch_detail(eid)
+            if status == "error":
+                # 拉取失败不推送，避免文案不完整 / 误报移除
+                skipped += 1
+                continue
+
+            prev = old.get(eid)
+            summary = _summarize(detail) if status == "ok" else None
+
+            if action == "移除" or status == "gone":
+                source = prev or summary
+                if source is None:
+                    continue
+                new.pop(eid, None)
+                messages.append(
+                    ("移除", _format_event_text(eid, "移除", source, None, note))
                 )
-                await self._push_to_all(text_content)
+                continue
+
+            if action == "新增" or prev is None:
+                new[eid] = summary
+                messages.append(
+                    ("新增", _format_event_text(eid, "新增", None, summary, note))
+                )
+                continue
+
+            if action or _has_tracked_change(prev, summary):
+                # WS 明确说明是更新时直接推送，即使本地比对无差异
+                new[eid] = summary
+                messages.append(
+                    ("更新", _format_event_text(eid, "更新", prev, summary, note))
+                )
+                continue
+
+            # bulk 合并消息且本地比对无差异：视为无需推送
+            skipped += 1
+
+        if not messages:
+            logger.info(
+                f"[BAOnly] 活动无变化，跳过推送（WS 下发 {len(pending)} 场，"
+                f"其中 {skipped} 场跳过）"
+            )
+            return
+
+        await self._cache.save(new)
+        await self._push_messages(messages)
 
     async def _fetch_all_events(self, token: str) -> dict:
         page = 1
@@ -556,22 +675,50 @@ class StreamNotifier:
             page = page_num + 1
         return events
 
-    async def _fetch_detail_safe(self, event_id: str):
+    async def _fetch_detail(self, event_id: str):
+        """按 ID 拉取单个活动详情，返回 (状态, 详情)。
+
+        状态：``ok`` 拉取成功 / ``gone`` 活动已下架或删除 / ``error`` 拉取失败。
+        """
         try:
             data = await fetch_event_detail(
                 self._config.get("token", ""), self._user_agent, event_id
             )
-            if data.get("not_found") or data.get("error"):
-                return None
-            return _map_event_detail(data)
         except Exception as e:
             logger.warning(f"[BAOnly] 获取活动详情失败 {event_id}: {e}")
-            return None
+            return "error", None
+        if data.get("not_found"):
+            return "gone", None
+        if data.get("error"):
+            logger.warning(f"[BAOnly] 获取活动详情失败 {event_id}: {data['error']}")
+            return "error", None
+        return "ok", _map_event_detail(data)
 
-    async def _push_to_all(self, text_content: str):
-        subs = await self._store.list()
-        if not subs:
+    def _target_subs(self, subs: list) -> list:
+        """按「关闭群发」测试开关过滤推送目标：开启后只保留私聊渠道。"""
+        if not self._disable_group_push:
+            return list(subs)
+        group_count = sum(1 for s in subs if s.get("is_group"))
+        targets = [s for s in subs if not s.get("is_group")]
+        logger.info(
+            f"[BAOnly] 已开启「关闭群发」（仅供测试使用），"
+            f"跳过 {group_count} 个群聊渠道，仅推送 {len(targets)} 个私聊渠道"
+        )
+        return targets
+
+    async def _push_messages(self, messages: list):
+        """把组装好的变更文案推送到全部订阅渠道。"""
+        if not messages:
             return
+        subs = self._target_subs(await self._store.list())
+        if not subs:
+            logger.info("[BAOnly] 无可用推送渠道，仅更新活动缓存")
+            return
+        for label, text_content in messages:
+            logger.info(f"[BAOnly] 推送变更[{label}]，共 {len(subs)} 个订阅渠道")
+            await self._push_to_all(text_content, subs)
+
+    async def _push_to_all(self, text_content: str, subs: list):
         chain = MessageChain().message(text_content)
         for sub in subs:
             # 按配置基础延时 + 随机 0.5~1s 抖动，错开推送降低风控风险

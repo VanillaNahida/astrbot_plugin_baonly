@@ -4,9 +4,12 @@
 渲染后端：
 - ``astrbot``：AstrBot 自带 html_render（远端 t2i 端点）
 - ``playwright``：本地 Playwright 渲染（插件已依赖）
-- ``auto``：优先 astrbot，失败回退 playwright
+- ``auto``：优先 astrbot，重试全部失败后回退 playwright
+
+两种后端都会按配置的重试次数重试，``auto`` 模式下前者重试耗尽后自动回退到后者。
 """
 
+import asyncio
 import html as _html
 import os
 import re
@@ -39,15 +42,26 @@ _FONT_LINKS = (
 # 可选的渲染后端
 VALID_RENDER_MODES = ("auto", "astrbot", "playwright")
 
+# 每种渲染方式的默认失败重试次数
+DEFAULT_RENDER_RETRY = 3
+
+# 两次重试之间的等待时间（秒）
+_RETRY_DELAY_SECONDS = 1.0
+
 
 def render_options_from_config(config) -> dict:
-    """从插件配置提取渲染参数（后端 / UA / 代理），供命令与 LLM 工具共用。"""
+    """从插件配置提取渲染参数（后端 / 重试次数 / UA / 代理），供命令与 LLM 工具共用。"""
     config = config or {}
     mode = str(config.get("detail_render_mode", "auto") or "auto").lower()
     if mode not in VALID_RENDER_MODES:
         mode = "auto"
+    try:
+        retry = int(config.get("detail_render_retry", DEFAULT_RENDER_RETRY))
+    except (TypeError, ValueError):
+        retry = DEFAULT_RENDER_RETRY
     return {
         "mode": mode,
+        "retry": max(1, retry),
         "user_agent": config.get("user_agent", "") or "",
         "proxy_host": config.get("proxy_host", "") or "",
         "proxy_port": config.get("proxy_port", "") or "",
@@ -584,7 +598,8 @@ def build_detail_card_html(
     return (
         "<!DOCTYPE html>"
         '<html lang="zh-CN"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        # t2i 端点会读取这里的 width 作为视口宽度，写死卡片宽度可避免两侧留白
+        f'<meta name="viewport" content="width={CARD_WIDTH}, initial-scale=1">'
         f"{_FONT_LINKS}"
         f"<style>{_CSS}</style></head><body>"
         f'<div class="card">{_hero(detail)}<div class="body">{body}</div></div>'
@@ -639,7 +654,15 @@ async def _render_with_astrbot(html_text: str) -> str:
         html_text,
         {},
         return_url=False,
-        options={"full_page": True, "type": "jpeg", "quality": 90},
+        options={
+            "full_page": True,
+            "type": "jpeg",
+            "quality": 90,
+            # 卡片宽度固定，显式指定视口宽度，否则 t2i 端点默认按 800px 视口截图，
+            # 卡片两侧会留下大面积空白。
+            "viewport_width": CARD_WIDTH,
+            "device_scale_factor_level": "ultra",
+        },
     )
     return _normalize_local_path(result)
 
@@ -723,32 +746,56 @@ async def _render_with_playwright(
                 user_agent=user_agent or None,
             )
             page = await context.new_page()
-            await page.set_content(html_text, wait_until="networkidle", timeout=30000)
+            # 不使用 networkidle：字体 / 图片 CDN 的连接会长时间不进入空闲状态，
+            # 导致 set_content 超时。这里只等 DOM 就绪，随后显式等待字体与图片。
+            await page.set_content(
+                html_text, wait_until="domcontentloaded", timeout=15000
+            )
             # 等待网页字体（Blueaka）就绪，否则会截到回退字体
             try:
-                await page.evaluate("() => document.fonts.ready")
+                await asyncio.wait_for(
+                    page.evaluate("() => document.fonts.ready"), timeout=10
+                )
             except Exception:
                 pass
             # 等待所有图片解码完成，避免出现空白占位
             try:
-                await page.evaluate("""
-                    async () => {
-                        const imgs = [...document.querySelectorAll('img')];
-                        await Promise.all(imgs.map(img => img.decode().catch(() => {})));
-                    }
-                """)
+                await asyncio.wait_for(
+                    page.evaluate("""
+                        async () => {
+                            const imgs = [...document.querySelectorAll('img')];
+                            await Promise.all(imgs.map(img => img.decode().catch(() => {})));
+                        }
+                    """),
+                    timeout=15,
+                )
             except Exception:
                 pass
             await page.wait_for_timeout(300)
-            await page.screenshot(path=output_path, full_page=True)
+            await page.screenshot(path=output_path, full_page=True, timeout=15000)
         finally:
             await browser.close()
     return output_path
 
 
+async def _render_with_retry(label: str, render, retry: int) -> str:
+    """按 retry 次数重试单个渲染后端，全部失败后抛出最后一次异常。"""
+    last_error = None
+    for attempt in range(1, retry + 1):
+        try:
+            return await render()
+        except Exception as e:
+            last_error = e
+            logger.warning(f"[BAOnly] {label}失败（第 {attempt}/{retry} 次）: {e}")
+            if attempt < retry:
+                await asyncio.sleep(_RETRY_DELAY_SECONDS)
+    raise last_error
+
+
 async def render_detail_card(
     detail: dict,
     mode: str = "auto",
+    retry: int = DEFAULT_RENDER_RETRY,
     output_dir: str = "",
     user_agent: str = "",
     astrbot_version: str = "",
@@ -762,6 +809,7 @@ async def render_detail_card(
     """渲染展会详情卡片，返回本地图片路径。
 
     mode: ``auto`` | ``astrbot`` | ``playwright``
+    retry: 每种渲染方式的失败重试次数，``auto`` 模式下重试全部失败后回退到另一种方式
     """
     html_text = build_detail_card_html(
         detail, astrbot_version, plugin_name, plugin_version
@@ -792,14 +840,23 @@ async def render_detail_card(
         return output_path
 
     mode = (mode or "auto").lower()
+    if mode not in VALID_RENDER_MODES:
+        mode = "auto"
+    try:
+        retry = max(1, int(retry))
+    except (TypeError, ValueError):
+        retry = DEFAULT_RENDER_RETRY
 
     if mode == "playwright":
-        return await _via_playwright()
+        return await _render_with_retry("Playwright 渲染", _via_playwright, retry)
     if mode == "astrbot":
-        return await _via_astrbot()
+        return await _render_with_retry("AstrBot 文转图渲染", _via_astrbot, retry)
 
     try:
-        return await _via_astrbot()
+        return await _render_with_retry("AstrBot 文转图渲染", _via_astrbot, retry)
     except Exception as e:
-        logger.warning(f"[BAOnly] AstrBot 文转图渲染失败，回退本地 Playwright: {e}")
-        return await _via_playwright()
+        logger.warning(
+            f"[BAOnly] AstrBot 文转图渲染失败（已重试 {retry} 次），"
+            f"自动回退本地 Playwright: {e}"
+        )
+        return await _render_with_retry("Playwright 渲染", _via_playwright, retry)
