@@ -20,6 +20,7 @@ from .detail_card import (
 from .help_card import build_help_text, render_help_card
 from .subscriptions import SubscriptionStore, _normalize_umo
 from .stream_notifier import StreamNotifier, _marker_labels
+from .time_utils import format_time_range
 from .group_cache import GroupInfoCache, extract_channel_id
 from .page_service import SubscriptionPageService, _resolve_display
 from .web import BAOnlyWebController
@@ -34,6 +35,16 @@ def _get_version_safe(package: str) -> str:
         return version(package)
     except Exception:
         return ""
+
+
+def _event_time_text(event: dict) -> str:
+    """活动时间文案：标准时间（startAt/endAt）优先，源站文案仅在解析不出时间点时回退。"""
+    return format_time_range(
+        event.get("startAt"),
+        event.get("endAt"),
+        event.get("timeLabel"),
+        placeholder="待定",
+    )
 
 
 class BAOnlyPlugin(Star):
@@ -125,7 +136,7 @@ class BAOnlyPlugin(Star):
             loc = f"{e.get('province') or ''} {e.get('city') or ''}".strip()
             block = [
                 f"- [{e.get('state')}] {e.get('title')}",
-                f"  时间: {e.get('timeLabel') or e.get('startAt') or '待定'}",
+                f"  时间: {_event_time_text(e)}",
                 f"  地点: {loc} {e.get('venueName') or ''}".rstrip(),
                 f"  票价: {e.get('priceLabel') or '待定'} | 售票: {e.get('saleFlag') or '未知'}",
             ]
@@ -184,7 +195,7 @@ class BAOnlyPlugin(Star):
             lines.append(f"  标记: {markers}")
         lines.extend(
             [
-                f"  时间: {detail.get('timeLabel') or detail.get('startAt') or '待定'}",
+                f"  时间: {_event_time_text(detail)}",
                 f"  地点: {loc or '待定'} {detail.get('address') or ''}".rstrip(),
                 f"  票价: {detail.get('priceLabel') or '待定'} | 售票: {detail.get('saleFlag') or '未知'}",
             ]

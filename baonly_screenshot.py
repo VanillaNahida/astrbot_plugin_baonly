@@ -4,7 +4,7 @@ from importlib.metadata import version
 
 from astrbot.api import logger
 
-BAONLY_URL = "https://beta.baonly.cn/"
+BAONLY_URL = "https://www.baonly.cn/"
 
 # 反调试注入脚本
 ANTI_DEBUG_SCRIPT = """
@@ -289,7 +289,7 @@ def build_footer_text(
     """生成页脚版本信息文案，供网页截图与详情卡片共用，保证两者一致。"""
     parts = [
         f"截图时间：{now_str}",
-        "数据来源自 beta.baonly.cn",
+        "数据来源自 www.baonly.cn",
         f"Powered By Playwright v{playwright_ver}",
     ]
     if astrbot_ver:

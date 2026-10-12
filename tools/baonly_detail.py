@@ -11,6 +11,7 @@ from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 
 from .baonly_query import BAONLY_API_BASE, fetch_events_list
+from ..time_utils import format_time_range
 
 
 async def fetch_event_detail(token: str, user_agent: str, event_id: str) -> dict:
@@ -62,6 +63,9 @@ def _map_event_detail(item):
     return {
         "id": item.get("id"),
         "title": item.get("title"),
+        "timeText": format_time_range(
+            item.get("startAt"), item.get("endAt"), item.get("timeLabel")
+        ),
         "timeLabel": item.get("timeLabel"),
         "startAt": item.get("startAt"),
         "endAt": item.get("endAt"),
@@ -271,6 +275,8 @@ class BAOnlyEventDetailTool(FunctionTool[AstrAgentContext]):
         "传入活动 id(从 baonly_query_events 获得)，返回该活动的详细资料，"
         "包括完整的介绍(description)、票档(tickets)、嘉宾(guests)、"
         "场馆(address)、主办方、购票链接等。"
+        "时间字段中 timeText 是由标准时间(startAt/endAt，东八区)格式化好的展示文案，"
+        "timeLabel 仅为源站原始文案，向用户播报时间请用 timeText / startAt。"
         "用于回答用户对某个具体展会的深入查询。"
     )
     parameters: dict = Field(

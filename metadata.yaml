@@ -2,7 +2,7 @@ name: astrbot_plugin_baonly
 display_name: 蔚蓝档案同人展BAOnly查询。
 desc: |
   一个专为蔚蓝档案玩家打造的 BAOnly（蔚蓝档案 ONLY 同人展）活动查询、
-  截图与订阅推送的AstrBot插件。已全面迁移至 beta.baonly.cn：
+  截图与订阅推送的AstrBot插件。已全面迁移至 www.baonly.cn：
   - Playwright 无头浏览器截图 BAOnly 活动列表页（支持 4/6/10/20/23/50 场/页）
   - LLM 工具与命令组均可查询展会列表与详情
   - /baonly help 把使用方法渲染成命令表格图片发送

@@ -9,7 +9,9 @@ from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 
-BAONLY_API_BASE = "https://beta.baonly.cn/api/public"
+from ..time_utils import format_time_range
+
+BAONLY_API_BASE = "https://www.baonly.cn/api/public"
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -167,6 +169,9 @@ def _map_event_list_item(item):
     return {
         "id": item.get("id"),
         "title": item.get("title"),
+        "timeText": format_time_range(
+            item.get("startAt"), item.get("endAt"), item.get("timeLabel")
+        ),
         "timeLabel": item.get("timeLabel"),
         "startAt": item.get("startAt"),
         "endAt": item.get("endAt"),
@@ -199,10 +204,13 @@ class BAOnlyQueryTool(FunctionTool[AstrAgentContext]):
     name: str = "baonly_query_events"
     description: str = (
         "查询蔚蓝档案(Blue Archive) BAONLY 同人展活动信息。"
-        "返回活动列表，包含活动名称(title)、时间(startAt/endAt/timeLabel)、"
+        "返回活动列表，包含活动名称(title)、时间(timeText：已按东八区格式化的标准时间，"
+        "如 2026.09.30 - 2026.10.01；startAt/endAt 为 ISO 标准时间，"
+        "timeLabel 仅为源站原始文案，无标准时间时才使用)、"
         "地点(province/city/venueName/address)、票价(priceLabel)、"
         "售票状态(saleFlag)、主办方(organizer)、标签(tags)、"
         "运营标记(markers：已取消/已延期/地点变更)等详细信息。"
+        "向用户播报时间时请使用 timeText 或依据 startAt/endAt 换算，不要直接照抄 timeLabel。"
         "可用于回答用户关于蔚蓝档案ONLY/同人展活动的查询。"
     )
     parameters: dict = Field(

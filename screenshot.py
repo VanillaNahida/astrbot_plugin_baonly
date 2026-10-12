@@ -6,7 +6,7 @@ from datetime import datetime
 from importlib.metadata import version
 from playwright.sync_api import sync_playwright
 
-url = "https://beta.baonly.cn/"
+url = "https://www.baonly.cn/"
 
 # 反调试注入脚本
 anti_debug_script = """

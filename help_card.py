@@ -64,7 +64,7 @@ TIP_ROWS = (
     "命令在群聊与私聊中均可使用，仅 sub / unsub 需要管理员权限",
     "也可以直接用自然语言提问，例如「广州有哪些蔚蓝档案活动？」，插件已注册 LLM 工具",
     "订阅渠道也可在 AstrBot WebUI 插件详情页的「订阅管理」中维护",
-    "展会数据来源：https://beta.baonly.cn",
+    "展会数据来源：https://www.baonly.cn",
 )
 
 _HELP_CSS = """

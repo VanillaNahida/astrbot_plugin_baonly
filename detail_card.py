@@ -15,16 +15,18 @@ import os
 import re
 import shutil
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from urllib.parse import quote as _urlquote
 
 from astrbot.api import logger
+
+from .time_utils import CST as _CST, format_time_range, parse_dt as _parse_dt
 
 PLUGIN_NAME = "astrbot_plugin_baonly"
 CARD_WIDTH = 414
 
 # 接口返回的图片是站内相对路径（如 /images/xx/yy/zz.webp），需要补全为绝对 URL
-BAONLY_ORIGIN = "https://beta.baonly.cn"
+BAONLY_ORIGIN = "https://www.baonly.cn"
 
 # 活动详情页地址
 BAONLY_EVENT_URL = BAONLY_ORIGIN + "/event/{event_id}"
@@ -133,22 +135,6 @@ def _abs_url(value) -> str:
     if url.startswith("/"):
         return BAONLY_ORIGIN + url
     return url
-
-
-_CST = timezone(timedelta(hours=8))
-
-
-def _parse_dt(value):
-    """解析 ISO 8601 时间串并归一到东八区，失败返回 None。"""
-    if not value:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=_CST)
-    return dt.astimezone(_CST)
 
 
 def _countdown_text(start_at, end_at, status) -> str:
@@ -294,17 +280,19 @@ def _meta_rows(detail: dict) -> str:
     """日期 / 地点 / 票价 三行信息。"""
     rows = []
 
-    date_main = _text(detail.get("timeLabel"))
+    # 时间以接口的标准时间（startAt/endAt，已按东八区归一）为准；
+    # timeLabel 只是源站原始文案，仅在解析不出时间点时回退，含日期时不再重复展示。
     start = _parse_dt(detail.get("startAt"))
     end = _parse_dt(detail.get("endAt"))
-    if not date_main and start:
-        date_main = start.strftime("%Y年%m月%d日")
+    date_main = format_time_range(
+        detail.get("startAt"), detail.get("endAt"), detail.get("timeLabel")
+    )
     date_sub = ""
     if start:
         date_sub = start.strftime("%Y.%m.%d")
         if end and end.date() != start.date():
             date_sub += end.strftime(" - %Y.%m.%d")
-    # timeLabel 有时本身就是日期文案，避免主副标题重复
+    # 主副标题内容一致时只保留主标题
     if date_sub and re.sub(r"\D", "", date_sub) == re.sub(r"\D", "", date_main):
         date_sub = ""
     if date_main or date_sub:

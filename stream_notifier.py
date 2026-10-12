@@ -10,11 +10,12 @@ from astrbot.api.event import MessageChain
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from .subscriptions import SubscriptionStore
+from .time_utils import format_time_range
 from .tools.baonly_query import fetch_events_list, DEFAULT_USER_AGENT
 from .tools.baonly_detail import fetch_event_detail, _map_event_detail
 
 PLUGIN_NAME = "astrbot_plugin_baonly"
-STREAM_URL = "wss://beta.baonly.cn/api/public/stream"
+STREAM_URL = "wss://www.baonly.cn/api/public/stream"
 
 # 活动缓存文件：data/plugin_data/{plugin_name}/activities_cache.json
 _ACTIVITIES_CACHE_FILE = (
@@ -22,9 +23,11 @@ _ACTIVITIES_CACHE_FILE = (
 )
 
 # 参与“更新”对比的字段
+# 时间用由 startAt / endAt 推导出的标准时间文案（timeText）对比，
+# 而不是源站原始文案 timeLabel —— 后者可能只是「预计时间」之类的占位文字。
 _TRACKED_FIELDS = (
     "title",
-    "timeLabel",
+    "timeText",
     "priceLabel",
     "saleFlag",
     "province",
@@ -44,7 +47,7 @@ _MARKER_LABELS = {
 # Diff 展示字段：展示标签 -> 参与对比的摘要字段（多字段会拼成一行，如 省·市）
 _DIFF_FIELDS = (
     ("标题", ("title",)),
-    ("时间", ("timeLabel",)),
+    ("时间", ("timeText",)),
     ("地点", ("province", "city")),
     ("场馆", ("venueName",)),
     ("票价", ("priceLabel",)),
@@ -66,10 +69,24 @@ def _now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _time_text(summary: dict) -> str:
+    """时间展示值：标准时间优先，兼容只存了原始文案的旧缓存。"""
+    text = str(summary.get("timeText") or "").strip()
+    if text:
+        return text
+    if not any(k in summary for k in ("startAt", "endAt", "timeLabel")):
+        return ""
+    return format_time_range(
+        summary.get("startAt"), summary.get("endAt"), summary.get("timeLabel")
+    )
+
+
 def _summary_value(summary: dict, keys: tuple) -> str:
     """把摘要里的一个或多个字段拼成展示用的值，空值返回空串。"""
     if keys == ("featured",):
         return "是" if summary.get("featured") else ""
+    if keys == ("timeText",):
+        return _time_text(summary)
     parts = [str(summary.get(k) or "").strip() for k in keys]
     return "·".join(p for p in parts if p)
 
@@ -101,9 +118,16 @@ def _format_duration(seconds: float) -> str:
 
 def _summarize(data: dict) -> dict:
     """从列表项/详情中提取用于对比与推送的摘要字段。"""
+    start_at = data.get("startAt")
+    end_at = data.get("endAt")
+    time_label = data.get("timeLabel")
     return {
         "title": data.get("title") or "",
-        "timeLabel": data.get("timeLabel") or "",
+        # 标准时间（startAt/endAt）与由它推导出的展示文案
+        "startAt": start_at or "",
+        "endAt": end_at or "",
+        "timeLabel": time_label or "",
+        "timeText": format_time_range(start_at, end_at, time_label),
         "priceLabel": data.get("priceLabel") or "",
         "saleFlag": data.get("saleFlag") or "",
         "province": data.get("province") or "",
@@ -207,7 +231,7 @@ class ActivityCache:
 
 
 class StreamNotifier:
-    """WebSocket 长连接订阅 beta.baonly.cn 变更推送。
+    """WebSocket 长连接订阅 www.baonly.cn 变更推送。
 
     推送消息自带 eventId（合并消息为 eventIds 数组）与 note 备注，因此只按 ID 拉取
     ``GET /api/public/events/{eventId}`` 并与本地缓存对比，推送「新增 / 移除 / 更新」；

@@ -2,7 +2,7 @@
   "token": {
     "description": "BAOnly beta 站 API Key",
     "type": "string",
-    "hint": "用于 x-api-key 请求头（查询 REST + WebSocket 订阅握手）。需在 beta.baonly.cn 申请，具备 stream:events 权限才能收到推送。",
+    "hint": "用于 x-api-key 请求头（查询 REST + WebSocket 订阅握手）。需在 www.baonly.cn 申请，具备 stream:events 权限才能收到推送。",
     "secret": true,
     "default": ""
   },
