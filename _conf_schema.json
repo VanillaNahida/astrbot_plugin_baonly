@@ -1,8 +1,8 @@
 {
   "token": {
-    "description": "BAOnly beta 站 API Key",
+    "description": "Baonly 站 API Key",
     "type": "string",
-    "hint": "用于 x-api-key 请求头（查询 REST + WebSocket 订阅握手）。需在 www.baonly.cn 申请，具备 stream:events 权限才能收到推送。",
+    "hint": "用于鉴权。需和查询站管理员申请，具备 stream:events 权限才能收到推送。",
     "secret": true,
     "default": ""
   },
@@ -82,7 +82,7 @@
   "ws_ping_interval": {
     "description": "WebSocket 心跳间隔（秒）",
     "type": "int",
-    "hint": "与 beta 站保持长连接的心跳频率，默认 30",
+    "hint": "与查询站保持长连接的心跳频率，默认 30",
     "default": 30
   },
   "ws_reconnect_interval": {

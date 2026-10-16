@@ -1,0 +1,7 @@
+{% macro section(title, icon_name) -%}
+<div class="section"><h2><span class="hic">{{ icon(icon_name, 18) }}</span>{{ title }}</h2>{{ caller() }}</div>
+{%- endmacro %}
+
+{% macro footer(text) -%}
+<div class="footer">{{ text }}</div>
+{%- endmacro %}

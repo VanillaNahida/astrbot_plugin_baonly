@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width={{ card_width }}, initial-scale=1">
+{% for href in font_stylesheets %}<link rel="stylesheet" href="{{ href }}">
+{% endfor %}<style>
+:root { --card-width: {{ card_width }}px; }
+{% include "styles/card.css" %}
+{% block styles %}{% endblock %}
+</style>
+</head>
+<body>
+<div class="card">{% block card %}{% endblock %}</div>
+</body>
+</html>

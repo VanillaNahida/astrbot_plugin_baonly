@@ -1,0 +1,41 @@
+{% extends "templates/base.html.j2" %}
+{% from "templates/macros.html.j2" import section, footer %}
+
+{% block styles %}{% include "styles/help.css" %}{% endblock %}
+
+{% block card %}
+<div class="help-hero">
+  <div class="help-hero-title">Baonly 插件帮助</div>
+  <div class="help-hero-sub">蔚蓝档案同人 ONLY 展会 · 截图 / 查询 / 订阅推送</div>
+</div>
+
+<div class="body">
+  {% call section("命令列表", "file-text") %}
+  <table class="cmds">
+    <thead><tr><th class="col-cmd">命令 / 示例</th><th>说明</th></tr></thead>
+    <tbody>
+      {% for row in commands %}
+      <tr>
+        <td class="cmd"><code>{{ row.command }}</code><span class="eg">示例：{{ row.example }}</span></td>
+        <td class="exp">{{ row.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endcall %}
+
+  {% call section("活动状态参数", "clock") %}
+  <div class="status-chips">
+    {% for key, label in statuses %}<span class="chip"><code>{{ key }}</code><span>{{ label }}</span></span>{% endfor %}
+  </div>
+  {% endcall %}
+
+  {% call section("使用提示", "info") %}
+  <div class="tips">
+    {% for tip in tips %}<div class="tip"><span class="tic">{{ icon("badge-check", 14) }}</span><span>{{ tip }}</span></div>{% endfor %}
+  </div>
+  {% endcall %}
+
+  {{ footer(footer_text) }}
+</div>
+{% endblock %}

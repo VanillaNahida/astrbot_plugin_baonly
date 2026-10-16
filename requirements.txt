@@ -1,3 +1,4 @@
 playwright
 httpx
-websockets
+websockets>=13
+jinja2

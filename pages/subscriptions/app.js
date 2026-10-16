@@ -64,6 +64,8 @@ async function addByNumber() {
     return;
   }
   const info = typeInfo();
+  const addButton = $("#build-umo");
+  addButton.disabled = true;
   try {
     const result = await bridge.apiPost("subscriptions/add", {
       is_group: info.is_group,
@@ -74,6 +76,8 @@ async function addByNumber() {
     await loadList();
   } catch (error) {
     showToast("添加失败：" + error.message, "error");
+  } finally {
+    addButton.disabled = false;
   }
 }
 
@@ -153,24 +157,30 @@ function renderGroupSelect(groups, subscribedIds) {
 
 async function confirmGroups() {
   const checked = [
-    ...document.querySelectorAll("#group-select input[type=checkbox]:checked"),
+    ...document.querySelectorAll("#group-select input[type=checkbox]:checked:not(:disabled)"),
   ];
   if (checked.length === 0) {
     showToast("请至少选择一个群", "error");
     return;
   }
+  const confirmButton = $("#confirm-groups");
+  confirmButton.disabled = true;
   let ok = 0;
   let failed = 0;
-  for (const cb of checked) {
-    try {
-      const result = await bridge.apiPost("subscriptions/add", {
-        is_group: true,
-        channel_id: cb.value,
-      });
-      ok += 1;
-    } catch (error) {
-      failed += 1;
+  try {
+    for (const cb of checked) {
+      try {
+        await bridge.apiPost("subscriptions/add", {
+          is_group: true,
+          channel_id: cb.value,
+        });
+        ok += 1;
+      } catch (error) {
+        failed += 1;
+      }
     }
+  } finally {
+    confirmButton.disabled = false;
   }
   if (failed === 0) {
     showToast(`已成功订阅 ${ok} 个群`, "success");
@@ -213,7 +223,7 @@ function showToast(text, kind = "info") {
 
 async function init() {
   await bridge.ready();
-  document.title = "订阅管理 - BAOnly";
+  document.title = "订阅管理 - Baonly";
   $("#build-umo").addEventListener("click", addByNumber);
   $("#open-groups").addEventListener("click", openGroupsModal);
   $("#close-groups").addEventListener("click", closeGroupsModal);

@@ -1,0 +1,101 @@
+{% extends "templates/base.html.j2" %}
+{% from "templates/macros.html.j2" import section, footer %}
+
+{% block card %}
+<template id="hero-empty"><div class="hero-empty">{{ icon("images", 44) }}</div></template>
+<script>
+function nextHero(img) {
+  const rest = (img.dataset.fallbacks || "").split(" ").filter(Boolean);
+  if (rest.length) {
+    img.dataset.fallbacks = rest.slice(1).join(" ");
+    img.src = rest[0];
+    return;
+  }
+  img.parentNode.innerHTML = document.getElementById("hero-empty").innerHTML;
+}
+</script>
+<div class="hero">
+  {% if card.hero_urls %}
+  <img src="{{ card.hero_urls[0] }}" alt="" data-fallbacks="{{ card.hero_urls[1:] | join(' ') }}" onerror="nextHero(this)">
+  {% else %}
+  <div class="hero-empty">{{ icon("images", 44) }}</div>
+  {% endif %}
+</div>
+
+<div class="body">
+  <h1>{{ card.title }}</h1>
+
+  {% if card.organizer or card.organizer_badge %}
+  <div class="org">
+    <span class="org-name">{{ card.organizer }}</span>
+    {% if card.organizer_badge %}<span class="verified">{{ icon("badge-check", 14) }}<span>{{ card.organizer_badge }}</span></span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if card.countdown %}<div class="countdown">{{ icon("clock", 14) }}{{ card.countdown }}</div>{% endif %}
+
+  {% if card.featured or card.markers or card.tags %}
+  <div class="chips">
+    {% if card.featured %}<span class="chip chip-featured">{{ icon("sparkles", 13) }}<span>精选</span></span>{% endif %}
+    {% for marker in card.markers %}<span class="chip chip-marker">{{ icon("triangle-alert", 13) }}<span>{{ marker }}</span></span>{% endfor %}
+    {% for tag in card.tags %}<span class="chip chip-tag">{{ tag }}</span>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="meta">
+    {% for row in card.meta_rows %}
+    <div class="meta-row">
+      <div class="meta-ic">{{ icon(row.icon, 20) }}</div>
+      <div>
+        <div class="meta-main">{{ row.main }}</div>
+        {% if row.sub %}<div class="meta-sub">{{ row.sub }}</div>{% endif %}
+        {% if row.links %}
+        <div class="maplinks">
+          {% for link in row.links %}<a class="maplink" href="{{ link.url }}">{{ icon("navigation", 11) }}<span>{{ link.label }}</span></a>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if card.description %}
+  {% call section("活动详情", "file-text") %}<div class="desc">{{ card.description }}</div>{% endcall %}
+  {% endif %}
+
+  {% for block in card.info_blocks %}
+  {% call section(block.title, block.icon) %}
+  <div class="kv-list">
+    {% for item in block.rows %}<div class="kv"><div class="k">{{ item.title }}</div><div class="v">{{ item.content }}</div></div>{% endfor %}
+  </div>
+  {% endcall %}
+  {% endfor %}
+
+  {% if card.tickets %}
+  {% call section("票务", "ticket") %}
+  {% for ticket in card.tickets %}
+  <div class="ticket">
+    <div><div class="ticket-name">{{ ticket.name }}</div><div class="ticket-sub">{{ ticket.screen }}</div></div>
+    <div class="ticket-right"><div class="ticket-price">{{ ticket.price }}</div><div class="ticket-sale{% if ticket.sale_closed %} ticket-sale-off{% endif %}">{{ ticket.sale }}</div></div>
+  </div>
+  {% endfor %}
+  {% endcall %}
+  {% endif %}
+
+  {% if card.guests %}
+  {% call section("嘉宾", "users") %}
+  <div class="guests">
+    {% for guest in card.guests %}
+    <div class="guest">
+      {% if guest.avatar %}<img src="{{ guest.avatar }}" alt="">{% else %}<div class="guest-ph">{{ icon("users", 26) }}</div>{% endif %}
+      <div class="guest-name">{{ guest.name }}</div>
+      <div class="guest-desc">{{ guest.description }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endcall %}
+  {% endif %}
+
+  {{ footer(footer_text) }}
+</div>
+{% endblock %}
