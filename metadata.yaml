@@ -3,7 +3,7 @@ display_name: baonly查询站插件
 desc: |
   连接 baonly 查询站并处理数据的 astrbot 插件
 short_desc: 连接 baonly 查询站并处理数据的 astrbot 插件
-version: v2.1.1
+version: v2.1.2
 author: 香草味的纳西妲喵（VanillaNahida）、丐陌nya~（Gaimoydev）
 
 repo: https://github.com/VanillaNahida/astrbot_plugin_baonly

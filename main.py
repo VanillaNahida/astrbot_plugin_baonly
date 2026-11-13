@@ -139,8 +139,18 @@ class BaonlyPlugin(Star):
         yield event.plain_result("\n".join(lines))
 
     @filter.permission_type(MEMBER)
+    @filter.command("蔚蓝档案ONLY", desc="查看插件使用方法（渲染成图片发送），等同于 baonly help")
+    async def baonly_only_help(self, event: AstrMessageEvent):
+        async for result in self._help_results(event):
+            yield result
+
+    @filter.permission_type(MEMBER)
     @baonly.command("help", desc="查看插件使用方法（渲染成图片发送）。用法：baonly help")
     async def help(self, event: AstrMessageEvent):
+        async for result in self._help_results(event):
+            yield result
+
+    async def _help_results(self, event: AstrMessageEvent):
         try:
             yield event.image_result(str(await self.svc.help_cards.render()))
             return

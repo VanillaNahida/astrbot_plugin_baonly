@@ -51,6 +51,7 @@
 | `/baonly status` | `/baonly status` | 查看推送连接状态（连接时长、API Key 有效性、最近推送等） |
 | `/baonly list` | `/baonly list` | 查看全部订阅渠道（群聊显示「群名+群号」，私聊显示「昵称+QQ号」） |
 | `/baonly help` | `/baonly help` | 查看插件使用方法，渲染成命令表格图片发送（渲染失败时回退文本） |
+| `/蔚蓝档案ONLY` | `/蔚蓝档案ONLY` | 查看插件使用方法，等同于 `/baonly help` |
 
 命令在群聊与私聊中均可使用。仅 `/baonly sub`、`/baonly unsub` 需要管理员权限，其余命令所有人可用（也可在 AstrBot WebUI 的「指令管理」中按需调整）。
 

@@ -25,6 +25,7 @@ COMMANDS = (
     CommandHelp("/baonly status", "/baonly status", "查看推送连接状态（连接时长 / API Key 有效性 / 最近推送）"),
     CommandHelp("/baonly list", "/baonly list", "查看全部订阅渠道（群聊 / 私聊）"),
     CommandHelp("/baonly help", "/baonly help", "查看本帮助（使用方法表格图片）"),
+    CommandHelp("/蔚蓝档案ONLY", "/蔚蓝档案ONLY", "查看本帮助，等同于 /baonly help"),
 )
 
 STATUSES = (
